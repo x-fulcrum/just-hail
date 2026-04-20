@@ -15,6 +15,29 @@ async function claudeComplete({ messages, max_tokens }) {
   return data.text;
 }
 
+async function claudeCompleteStream({ messages, max_tokens, onDelta }) {
+  const res = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, max_tokens, stream: true }),
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Claude stream error (${res.status}): ${err || res.statusText}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    full += chunk;
+    if (onDelta) onDelta(full);
+  }
+  return full;
+}
+
 /* =========================================================
    1. AI PHOTO TRIAGE — Claude Vision estimates dent severity
    ========================================================= */
@@ -244,16 +267,35 @@ function ChatWidget({ accent }) {
     setMessages(newMessages);
     setInput('');
     setThinking(true);
+    let firstDelta = true;
     try {
-      const reply = await claudeComplete({
+      await claudeCompleteStream({
         messages: [
           { role: 'user', content: SYSTEM + '\n\n---\n\nConversation so far:\n' + newMessages.map(m => `${m.role}: ${m.content}`).join('\n') + '\n\nassistant:' },
         ],
+        onDelta: (full) => {
+          if (firstDelta) {
+            firstDelta = false;
+            setThinking(false);
+            setMessages(m => [...m, { role: 'assistant', content: full }]);
+          } else {
+            setMessages(m => {
+              const next = [...m];
+              next[next.length - 1] = { role: 'assistant', content: full };
+              return next;
+            });
+          }
+        },
       });
-      setMessages(m => [...m, { role: 'assistant', content: reply.trim() }]);
       if (!open) setUnread(u => u + 1);
     } catch (e) {
-      setMessages(m => [...m, { role: 'assistant', content: "Sorry, I hit a snag. Please call us at (512) 221-3013 or fill out the estimate form." }]);
+      console.error(e);
+      setMessages(m => {
+        if (firstDelta) return [...m, { role: 'assistant', content: "Sorry, I hit a snag. Please call us at (512) 221-3013 or fill out the estimate form." }];
+        const next = [...m];
+        next[next.length - 1] = { role: 'assistant', content: next[next.length - 1].content + "\n\n(connection dropped — please try again or call (512) 221-3013.)" };
+        return next;
+      });
     } finally {
       setThinking(false);
     }

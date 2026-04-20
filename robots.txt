@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /admin
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /screenshots/
+
+Sitemap: https://just-hail-charlie-ohnstads-projects-a684291d.vercel.app/sitemap.xml
