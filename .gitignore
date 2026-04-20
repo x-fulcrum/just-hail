@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+.vercel/
+npm-debug.log*
+.DS_Store
+
+# Design-handoff source bundle — superseded by files at repo root
+jh/
+
+# Dev/scratch artifacts from the design iteration (not referenced at runtime)
+uploads/
+screenshots/

@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Just Hail · Admin</title>
+<meta name="robots" content="noindex,nofollow" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0b10;
+    --surface: #12141b;
+    --surface-2: #181b24;
+    --hair: #23272f;
+    --hair-strong: #2d323d;
+    --ink: #f5f3ee;
+    --ink-dim: #9096a1;
+    --accent: #b00020;
+    --green: #39d7aa;
+    --amber: #f3a83a;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-ui: 'Inter', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  a { color: var(--ink); }
+  .mono { font-family: var(--font-mono); }
+  .dim { color: var(--ink-dim); }
+  .hair { border: 1px solid var(--hair); }
+  .hair-b { border-bottom: 1px solid var(--hair); }
+  .h1 { font-family: var(--font-display); font-size: 32px; font-weight: 400; letter-spacing: -0.02em; margin: 0; }
+  .eyebrow { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); }
+  .btn { padding: 10px 18px; background: var(--accent); color: #0a0b10; border: none; border-radius: 2px; font-family: var(--font-ui); font-weight: 500; cursor: pointer; letter-spacing: 0.02em; font-size: 13px; }
+  .btn:hover { opacity: 0.92; }
+  .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--hair-strong); }
+  input, select, textarea { background: var(--surface); color: var(--ink); border: 1px solid var(--hair-strong); border-radius: 2px; padding: 12px 14px; font-family: var(--font-ui); font-size: 14px; width: 100%; }
+  input:focus { outline: none; border-color: var(--accent); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 2px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; border: 1px solid var(--hair-strong); }
+  .chip.new { color: var(--accent); border-color: var(--accent); }
+  .chip.contacted { color: var(--amber); border-color: var(--amber); }
+  .chip.scheduled { color: var(--green); border-color: var(--green); }
+  .chip.closed { color: var(--ink-dim); }
+  .card { background: var(--surface); border: 1px solid var(--hair); padding: 24px; border-radius: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-family: var(--font-mono); font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-dim); padding: 14px 16px; border-bottom: 1px solid var(--hair); background: var(--surface-2); position: sticky; top: 0; z-index: 2; }
+  td { padding: 18px 16px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  tr:hover td { background: var(--surface-2); }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--hair-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 300ms ease-out; }
+  .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.3); } }
+  .stat-val { font-family: var(--font-display); font-size: 40px; font-weight: 400; letter-spacing: -0.02em; line-height: 1; }
+  .stat-lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); margin-top: 10px; }
+  .stat-delta { display: inline-block; margin-top: 8px; padding: 2px 6px; font-family: var(--font-mono); font-size: 10px; border-radius: 2px; background: rgba(57,215,170,0.12); color: var(--green); }
+  .drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 60; animation: fadeIn 180ms; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 520px; max-width: 100vw; background: var(--surface); border-left: 1px solid var(--hair); z-index: 61; overflow-y: auto; animation: slideIn 260ms cubic-bezier(.2,.8,.2,1); }
+  @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  kbd { font-family: var(--font-mono); font-size: 10px; padding: 2px 6px; border: 1px solid var(--hair-strong); border-radius: 2px; background: var(--surface-2); color: var(--ink-dim); }
+  .empty { text-align: center; padding: 80px 20px; color: var(--ink-dim); }
+  .empty .big { font-family: var(--font-display); font-size: 28px; color: var(--ink); margin-bottom: 8px; font-weight: 400; }
+</style>
+</head>
+<body>
+
+<!-- ================ LOGIN GATE ================ -->
+<div id="gate" style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); z-index: 100;">
+  <div style="width: 380px; padding: 48px 40px; border: 1px solid var(--hair); background: var(--surface);">
+    <div class="eyebrow" style="margin-bottom: 16px;">· Just Hail · Staff only</div>
+    <h1 class="h1" style="font-size: 28px; margin-bottom: 8px;">Sign in</h1>
+    <p class="dim" style="font-size: 13px; margin: 0 0 32px; line-height: 1.5;">This dashboard is private. Enter the staff passcode to continue.</p>
+    <form id="gateForm" autocomplete="off">
+      <input id="gatePass" type="password" placeholder="Passcode" autofocus />
+      <button class="btn" type="submit" style="width: 100%; margin-top: 14px; padding: 14px;">
+        Access dashboard →
+      </button>
+      <div id="gateErr" style="display: none; margin-top: 14px; padding: 10px 12px; border: 1px solid var(--accent); color: var(--accent); font-family: var(--font-mono); font-size: 11px;"></div>
+    </form>
+    <div style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--hair); font-family: var(--font-mono); font-size: 10px; color: var(--ink-dim); letter-spacing: 0.08em; text-transform: uppercase;">
+      Forgot passcode? · Ask Charlie
+    </div>
+  </div>
+</div>
+
+<!-- ================ APP SHELL ================ -->
+<div id="app" style="display: none;">
+
+  <!-- Top bar -->
+  <header class="hair-b" style="position: sticky; top: 0; z-index: 40; background: color-mix(in oklab, var(--bg), transparent 10%); backdrop-filter: blur(10px); padding: 16px 28px; display: flex; align-items: center; gap: 24px;">
+    <a href="Just Hail.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none;">
+      <img src="logo.webp" alt="Just Hail" style="height: 32px; width: auto; filter: invert(1);" />
+      <span class="mono" style="font-size: 10px; color: var(--ink-dim); letter-spacing: 0.14em; padding-left: 12px; border-left: 1px solid var(--hair-strong); line-height: 1.4;">ADMIN<br/>v1.0</span>
+    </a>
+    <div style="flex: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span class="pulse-dot"></span>
+      <span class="mono dim" style="font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;">Live · <span id="lastSync">just now</span></span>
+    </div>
+    <button class="btn btn-ghost" id="refreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
+    <button class="btn btn-ghost" id="logoutBtn" style="font-size: 12px; padding: 8px 14px;">Sign out</button>
+  </header>
+
+  <!-- Main -->
+  <main style="padding: 40px 28px 80px; max-width: 1600px; margin: 0 auto;">
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 40px; gap: 24px; flex-wrap: wrap;">
+      <div>
+        <div class="eyebrow">· Lead intake</div>
+        <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Estimate requests</h1>
+        <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Every form submission from justhail.com, in order.</p>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn btn-ghost" id="exportBtn">Export CSV</button>
+        <a class="btn" href="#" id="sheetLink" target="_blank" rel="noopener">Open Google Sheet ↗</a>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div id="statsRow" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px;"></div>
+
+    <!-- Controls -->
+    <div style="display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+      <input id="searchInput" type="text" placeholder="Search name, phone, vehicle, ZIP…" style="max-width: 360px;" />
+      <select id="filterStatus" style="width: auto;">
+        <option value="">All statuses</option>
+        <option value="New">New</option>
+        <option value="Contacted">Contacted</option>
+        <option value="Scheduled">Scheduled</option>
+        <option value="Closed">Closed</option>
+      </select>
+      <select id="filterTimeline" style="width: auto;">
+        <option value="">All timelines</option>
+        <option value="asap">ASAP</option>
+        <option value="this-week">This week</option>
+        <option value="flexible">Flexible</option>
+      </select>
+      <span class="mono dim" style="margin-left: auto; font-size: 11px;">Tip: press <kbd>/</kbd> to search, <kbd>R</kbd> to refresh</span>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <div style="max-height: 620px; overflow-y: auto;">
+        <table id="leadsTable">
+          <thead>
+            <tr>
+              <th style="width: 110px;">Time</th>
+              <th style="width: 120px;">Ref #</th>
+              <th>Customer</th>
+              <th>Vehicle</th>
+              <th>Severity</th>
+              <th>Timeline</th>
+              <th style="width: 110px;">Status</th>
+            </tr>
+          </thead>
+          <tbody id="leadsBody"></tbody>
+        </table>
+      </div>
+      <div id="loadState" style="padding: 60px 20px; text-align: center;">
+        <span class="spin"></span>
+        <div class="mono dim" style="margin-top: 16px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;">Fetching from Google Sheet…</div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+      <div class="mono dim" style="font-size: 11px;">Showing <span id="shownCount">0</span> of <span id="totalCount">0</span> leads</div>
+      <div class="mono dim" style="font-size: 11px;">Auto-refresh every 45s</div>
+    </div>
+  </main>
+</div>
+
+<!-- Drawer for lead details -->
+<div id="drawerHost"></div>
+
+<script>
+// =========================================================
+// CONFIG — must match apps-script.gs
+// =========================================================
+const ENDPOINT = 'https://script.google.com/macros/s/AKfycbzi_4_ZaBRafJ5bZpxavtNF7fzS84bJHHicANZQZiybTZpwaStqK72Qc1KGTAKzmkf4vQ/exec';
+const ADMIN_KEY = 'jh-leander-2026';
+const SESSION_KEY = 'jh-admin-auth';
+
+// =========================================================
+// AUTH GATE
+// =========================================================
+const gate = document.getElementById('gate');
+const app = document.getElementById('app');
+const gateForm = document.getElementById('gateForm');
+const gatePass = document.getElementById('gatePass');
+const gateErr = document.getElementById('gateErr');
+
+function showApp() {
+  gate.style.display = 'none';
+  app.style.display = 'block';
+  init();
+}
+function showGate() {
+  gate.style.display = 'flex';
+  app.style.display = 'none';
+  setTimeout(() => gatePass.focus(), 50);
+}
+
+// Check saved session
+if (sessionStorage.getItem(SESSION_KEY) === ADMIN_KEY) {
+  showApp();
+}
+
+gateForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = gatePass.value.trim();
+  if (v === ADMIN_KEY) {
+    sessionStorage.setItem(SESSION_KEY, ADMIN_KEY);
+    gateErr.style.display = 'none';
+    showApp();
+  } else {
+    gateErr.textContent = 'Incorrect passcode. Try again or ask Charlie.';
+    gateErr.style.display = 'block';
+    gatePass.value = '';
+    gatePass.focus();
+  }
+});
+
+document.getElementById('logoutBtn')?.addEventListener('click', () => {
+  sessionStorage.removeItem(SESSION_KEY);
+  location.reload();
+});
+
+// =========================================================
+// DATA FETCH via JSONP (bypasses CORS for Apps Script)
+// =========================================================
+let allLeads = [];
+let fetchInFlight = false;
+
+function fetchLeads() {
+  if (fetchInFlight) return;
+  fetchInFlight = true;
+  const cb = 'jh_cb_' + Date.now();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Request timed out'));
+    }, 15000);
+    function cleanup() {
+      delete window[cb];
+      if (s.parentNode) s.parentNode.removeChild(s);
+      fetchInFlight = false;
+      clearTimeout(timer);
+    }
+    window[cb] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+    const s = document.createElement('script');
+    s.src = ENDPOINT + '?key=' + encodeURIComponent(ADMIN_KEY) + '&callback=' + cb + '&t=' + Date.now();
+    s.onerror = () => { cleanup(); reject(new Error('Network error')); };
+    document.head.appendChild(s);
+  });
+}
+
+// =========================================================
+// RENDER
+// =========================================================
+const leadsBody = document.getElementById('leadsBody');
+const loadState = document.getElementById('loadState');
+const statsRow = document.getElementById('statsRow');
+const searchInput = document.getElementById('searchInput');
+const filterStatus = document.getElementById('filterStatus');
+const filterTimeline = document.getElementById('filterTimeline');
+const shownCount = document.getElementById('shownCount');
+const totalCount = document.getElementById('totalCount');
+const lastSync = document.getElementById('lastSync');
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return Math.floor(diff) + 's ago';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  if (diff < 86400 * 7) return Math.floor(diff/86400) + 'd ago';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function fmtDateFull(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+}
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderStats(leads) {
+  const now = Date.now();
+  const last24h = leads.filter(l => {
+    const t = new Date(l.submitted_at || 0).getTime();
+    return now - t < 86400000;
+  }).length;
+  const newCount = leads.filter(l => (l.status || 'New') === 'New').length;
+  const asap = leads.filter(l => l.timeline === 'asap').length;
+
+  // Rough estimated pipeline value (midpoint of range)
+  const pipelineTotal = leads.reduce((sum, l) => {
+    const range = (l.estimated_range || '').match(/\$?([\d,]+)\s*[–-]\s*\$?([\d,]+)/);
+    if (!range) return sum;
+    const lo = parseInt(range[1].replace(/,/g,''), 10) || 0;
+    const hi = parseInt(range[2].replace(/,/g,''), 10) || 0;
+    return sum + (lo + hi) / 2;
+  }, 0);
+
+  const cards = [
+    { lbl: 'Total leads', val: leads.length, delta: last24h ? '+' + last24h + ' last 24h' : null },
+    { lbl: 'New / unread', val: newCount, delta: newCount ? 'needs follow-up' : 'inbox zero', dim: !newCount },
+    { lbl: 'ASAP requests', val: asap, delta: asap ? 'urgent' : null },
+    { lbl: 'Pipeline value', val: '$' + Math.round(pipelineTotal).toLocaleString(), delta: 'estimated midpoint' },
+  ];
+
+  statsRow.innerHTML = cards.map(c => `
+    <div class="card fade-in">
+      <div class="stat-val">${c.val}</div>
+      <div class="stat-lbl">${c.lbl}</div>
+      ${c.delta ? `<div class="stat-delta" style="${c.dim ? 'background:transparent;color:var(--ink-dim);padding:0;' : ''}">${c.delta}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function filteredLeads() {
+  const q = searchInput.value.trim().toLowerCase();
+  const status = filterStatus.value;
+  const timeline = filterTimeline.value;
+  return allLeads.filter(l => {
+    if (status && (l.status || 'New') !== status) return false;
+    if (timeline && l.timeline !== timeline) return false;
+    if (q) {
+      const blob = [l.name, l.phone, l.email, l.vehicle, l.zip, l.reference_].join(' ').toLowerCase();
+      if (!blob.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderLeads() {
+  const leads = filteredLeads();
+  totalCount.textContent = allLeads.length;
+  shownCount.textContent = leads.length;
+
+  if (!allLeads.length) {
+    loadState.style.display = 'block';
+    loadState.innerHTML = `
+      <div class="empty">
+        <div class="big">No leads yet.</div>
+        <div>When a customer submits the form on justhail.com, they'll show up here in real time.</div>
+      </div>`;
+    leadsBody.innerHTML = '';
+    return;
+  }
+  loadState.style.display = 'none';
+
+  if (!leads.length) {
+    leadsBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 60px 20px;" class="dim">No leads match those filters.</td></tr>`;
+    return;
+  }
+
+  leadsBody.innerHTML = leads.map((l, i) => {
+    const status = l.status || 'New';
+    const statusCls = status.toLowerCase();
+    return `
+      <tr class="fade-in" data-row="${l._row}" style="cursor: pointer; animation-delay: ${Math.min(i, 10) * 20}ms;">
+        <td class="mono dim" style="font-size: 11px;">${fmtTime(l.submitted_at)}</td>
+        <td class="mono" style="font-size: 11px; color: var(--accent);">${escapeHtml(l.reference_ || '—')}</td>
+        <td>
+          <div style="font-weight: 500;">${escapeHtml(l.name || '—')}</div>
+          <div class="mono dim" style="font-size: 11px; margin-top: 3px;">${escapeHtml(l.phone || '')}${l.zip ? ' · ' + escapeHtml(l.zip) : ''}</div>
+        </td>
+        <td>
+          <div>${escapeHtml(l.year || '')} ${escapeHtml(l.vehicle || '—')}</div>
+          <div class="mono dim" style="font-size: 11px; margin-top: 3px;">${escapeHtml(l.insurer || 'No insurer')}</div>
+        </td>
+        <td>
+          <div>${escapeHtml((l.severity_label || '').split(' (')[0] || '—')}</div>
+          <div class="mono" style="font-size: 11px; color: var(--green); margin-top: 3px;">${escapeHtml(l.estimated_range || '')}</div>
+        </td>
+        <td class="mono" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;">${escapeHtml(l.timeline || '—')}</td>
+        <td><span class="chip ${statusCls}">${escapeHtml(status)}</span></td>
+      </tr>
+    `;
+  }).join('');
+
+  // Wire row clicks
+  leadsBody.querySelectorAll('tr[data-row]').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const row = +tr.dataset.row;
+      const lead = allLeads.find(l => l._row === row);
+      if (lead) openDrawer(lead);
+    });
+  });
+}
+
+// =========================================================
+// DETAIL DRAWER
+// =========================================================
+function openDrawer(lead) {
+  const host = document.getElementById('drawerHost');
+  const phone = (lead.phone || '').replace(/\D/g,'');
+  const tel = phone ? `tel:+1${phone}` : '#';
+  const sms = phone ? `sms:+1${phone}` : '#';
+  const email = lead.email ? `mailto:${lead.email}` : '#';
+
+  host.innerHTML = `
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="drawer">
+      <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--surface); z-index: 2;">
+        <div>
+          <div class="eyebrow">· Lead detail</div>
+          <div class="mono" style="font-size: 14px; color: var(--accent); margin-top: 6px;">${escapeHtml(lead.reference_ || '—')}</div>
+        </div>
+        <button class="btn btn-ghost" id="closeDrawer" style="padding: 6px 12px;">Close ✕</button>
+      </div>
+      <div style="padding: 32px 28px;">
+        <h2 class="h1" style="font-size: 28px;">${escapeHtml(lead.name || '—')}</h2>
+        <div class="dim mono" style="margin-top: 6px; font-size: 11px;">${fmtDateFull(lead.submitted_at)}</div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 24px;">
+          <a class="btn" href="${tel}" style="text-align: center; text-decoration: none; display:block;">Call</a>
+          <a class="btn btn-ghost" href="${sms}" style="text-align: center; text-decoration: none; display:block;">Text</a>
+          <a class="btn btn-ghost" href="${email}" style="text-align: center; text-decoration: none; display:block;">Email</a>
+        </div>
+
+        <div style="margin-top: 36px;">
+          <div class="eyebrow" style="margin-bottom: 14px;">· Contact</div>
+          ${field('Phone', lead.phone)}
+          ${field('Email', lead.email)}
+          ${field('ZIP', lead.zip)}
+        </div>
+
+        <div style="margin-top: 28px;">
+          <div class="eyebrow" style="margin-bottom: 14px;">· Vehicle</div>
+          ${field('Make/Model', lead.vehicle)}
+          ${field('Year', lead.year)}
+          ${field('Damage', lead.damage)}
+          ${field('Insurer', lead.insurer)}
+        </div>
+
+        <div style="margin-top: 28px;">
+          <div class="eyebrow" style="margin-bottom: 14px;">· Estimate</div>
+          ${field('Severity', lead.severity_label)}
+          ${field('Range', lead.estimated_range)}
+          ${field('Timeline', lead.timeline)}
+        </div>
+
+        ${lead.notes ? `
+          <div style="margin-top: 28px;">
+            <div class="eyebrow" style="margin-bottom: 14px;">· Customer notes</div>
+            <div style="padding: 16px; background: var(--surface-2); border-left: 2px solid var(--accent); font-size: 14px; line-height: 1.55; white-space: pre-wrap;">${escapeHtml(lead.notes)}</div>
+          </div>
+        ` : ''}
+
+        <div style="margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--hair);">
+          <div class="eyebrow" style="margin-bottom: 10px;">· Source & session</div>
+          <div class="mono dim" style="font-size: 11px; line-height: 1.6;">${escapeHtml(lead.source || '—')}<br/>${escapeHtml(lead.user_agent || '—')}</div>
+        </div>
+
+        <div style="margin-top: 36px; padding: 16px; border: 1px dashed var(--hair-strong); font-size: 12px; color: var(--ink-dim); line-height: 1.5;">
+          <strong style="color: var(--ink);">Status changes</strong> happen in the Google Sheet itself — edit the <em>Status</em> column to New / Contacted / Scheduled / Closed. The dashboard will reflect the change within 45 seconds.
+        </div>
+      </div>
+    </aside>
+  `;
+  document.body.style.overflow = 'hidden';
+  document.getElementById('drawerBackdrop').addEventListener('click', closeDrawer);
+  document.getElementById('closeDrawer').addEventListener('click', closeDrawer);
+}
+function closeDrawer() {
+  document.getElementById('drawerHost').innerHTML = '';
+  document.body.style.overflow = '';
+}
+function field(label, val) {
+  return `
+    <div style="display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--hair);">
+      <span class="dim" style="font-size: 12px;">${escapeHtml(label)}</span>
+      <span style="font-size: 13px; text-align: right; word-break: break-word;">${escapeHtml(val || '—')}</span>
+    </div>`;
+}
+
+// =========================================================
+// EVENTS
+// =========================================================
+searchInput.addEventListener('input', renderLeads);
+filterStatus.addEventListener('change', renderLeads);
+filterTimeline.addEventListener('change', renderLeads);
+document.getElementById('refreshBtn').addEventListener('click', loadAndRender);
+document.getElementById('exportBtn').addEventListener('click', exportCsv);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDrawer();
+  if (app.style.display !== 'block') return;
+  if (e.target.matches('input, textarea, select')) return;
+  if (e.key === '/') { e.preventDefault(); searchInput.focus(); }
+  if (e.key === 'r' || e.key === 'R') loadAndRender();
+});
+
+function exportCsv() {
+  const leads = filteredLeads();
+  if (!leads.length) return alert('No leads to export.');
+  const keys = ['submitted_at','reference_','name','email','phone','zip','year','vehicle','damage','insurer','severity_label','estimated_range','timeline','notes','status'];
+  const header = keys.join(',');
+  const rows = leads.map(l => keys.map(k => {
+    let v = l[k] == null ? '' : String(l[k]);
+    if (v.includes(',') || v.includes('"') || v.includes('\n')) v = '"' + v.replace(/"/g,'""') + '"';
+    return v;
+  }).join(','));
+  const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'just-hail-leads-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadAndRender() {
+  try {
+    const refreshBtn = document.getElementById('refreshBtn');
+    refreshBtn.innerHTML = '<span class="spin" style="width:10px;height:10px;border-width:1.5px;"></span> Refreshing…';
+    const res = await fetchLeads();
+    if (!res.ok) throw new Error(res.error || 'Unknown');
+    allLeads = (res.leads || []).sort((a, b) => {
+      const ta = new Date(a.submitted_at || 0).getTime();
+      const tb = new Date(b.submitted_at || 0).getTime();
+      return tb - ta;
+    });
+    renderStats(allLeads);
+    renderLeads();
+    lastSync.textContent = 'just now';
+    refreshBtn.textContent = 'Refresh';
+  } catch (err) {
+    console.error(err);
+    loadState.innerHTML = `
+      <div class="empty">
+        <div class="big" style="color: var(--accent);">Couldn't reach the sheet.</div>
+        <div>${escapeHtml(err.message || 'Unknown error')}</div>
+        <button class="btn" style="margin-top: 20px;" onclick="loadAndRender()">Try again</button>
+      </div>`;
+    document.getElementById('refreshBtn').textContent = 'Refresh';
+  }
+}
+
+// Periodically update 'time ago' labels
+setInterval(() => {
+  if (app.style.display !== 'block' || !allLeads.length) return;
+  const rows = leadsBody.querySelectorAll('tr[data-row]');
+  rows.forEach(tr => {
+    const row = +tr.dataset.row;
+    const lead = allLeads.find(l => l._row === row);
+    if (lead) tr.children[0].textContent = fmtTime(lead.submitted_at);
+  });
+  const syncedAt = +(lastSync.dataset.t || Date.now());
+  const diff = Math.floor((Date.now() - syncedAt) / 1000);
+  if (diff < 60) lastSync.textContent = 'just now';
+  else if (diff < 3600) lastSync.textContent = Math.floor(diff/60) + 'm ago';
+  else lastSync.textContent = Math.floor(diff/3600) + 'h ago';
+}, 15000);
+
+function init() {
+  loadAndRender().then(() => {
+    lastSync.dataset.t = Date.now();
+    // Auto-refresh every 45 seconds
+    setInterval(() => {
+      loadAndRender().then(() => { lastSync.dataset.t = Date.now(); });
+    }, 45000);
+  });
+}
+</script>
+</body>
+</html>
