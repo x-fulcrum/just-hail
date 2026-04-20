@@ -179,6 +179,7 @@ const JOURNAL_POSTS = [
    ----------------------------------------------------------- */
 
 function Resources({ accent }) {
+  const isMobile = useIsMobile(900);
   const [activeSlug, setActiveSlug] = React.useState(null);
 
   // hash routing
@@ -205,10 +206,10 @@ function Resources({ accent }) {
   const activePost = activeSlug ? JOURNAL_POSTS.find(p => p.slug === activeSlug) : null;
 
   return (
-    <section id="journal" style={{ padding: '160px 0', borderBottom: '1px solid var(--hair)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px' }}>
+    <section id="journal" style={{ padding: isMobile ? '96px 0' : '160px 0', borderBottom: '1px solid var(--hair)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px' }}>
         <Reveal>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 24, marginBottom: 80 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 24, marginBottom: isMobile ? 48 : 80 }}>
             <div>
               <Eyebrow>07 — Field Journal</Eyebrow>
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(40px, 5vw, 72px)', lineHeight: 1, margin: '14px 0 16px', fontWeight: 400, letterSpacing: '-0.02em' }}>
@@ -258,13 +259,14 @@ function Resources({ accent }) {
 
 function FeaturedPost({ post, accent, onOpen }) {
   const [hover, setHover] = React.useState(false);
+  const isMobile = useIsMobile(900);
   return (
     <article
       onMouseEnter={()=>setHover(true)}
       onMouseLeave={()=>setHover(false)}
       onClick={() => onOpen(post.slug)}
       style={{
-        display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 0,
+        display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr', gap: 0,
         border: '1px solid var(--hair)',
         marginBottom: 0,
         cursor: 'pointer',
@@ -273,7 +275,7 @@ function FeaturedPost({ post, accent, onOpen }) {
         borderColor: hover ? 'var(--hair-strong)' : 'var(--hair)',
       }}
     >
-      <div style={{ position: 'relative', overflow: 'hidden', aspectRatio: '16 / 10', background: '#000' }}>
+      <div style={{ position: 'relative', overflow: 'hidden', aspectRatio: isMobile ? '16 / 9' : '16 / 10', background: '#000' }}>
         <img src={post.img} alt="" loading="lazy" style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
           transform: hover ? 'scale(1.04)' : 'scale(1)',
@@ -291,7 +293,7 @@ function FeaturedPost({ post, accent, onOpen }) {
           Featured · {post.tag}
         </div>
       </div>
-      <div style={{ padding: '44px 44px 44px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 400 }}>
+      <div style={{ padding: isMobile ? '28px 24px' : '44px 44px 44px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: isMobile ? 0 : 400 }}>
         <div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 16 }}>
             <time dateTime={post.date}>{post.dateDisplay}</time> · {post.read} min read
@@ -391,6 +393,7 @@ function AuthorByline({ compact = false, accent }) {
 function ArticleReader({ post, accent, onClose, onOpen, related }) {
   const [progress, setProgress] = React.useState(0);
   const bodyRef = React.useRef(null);
+  const isMobile = useIsMobile(900);
 
   // SEO: swap document <title>, meta description, and inject JSON-LD
   React.useEffect(() => {
@@ -470,7 +473,7 @@ function ArticleReader({ post, accent, onClose, onOpen, related }) {
         backdropFilter: 'blur(16px)',
         display: 'flex', justifyContent: 'center',
         animation: 'lightboxIn 240ms cubic-bezier(.2,.7,.2,1)',
-        padding: '40px 20px',
+        padding: isMobile ? '0' : '40px 20px',
         overflow: 'hidden',
       }}
     >
@@ -541,7 +544,7 @@ function ArticleReader({ post, accent, onClose, onOpen, related }) {
         </div>
 
         {/* article */}
-        <article style={{ padding: '56px 72px 48px', maxWidth: 760, margin: '0 auto' }}>
+        <article style={{ padding: isMobile ? '40px 20px 32px' : '56px 72px 48px', maxWidth: 760, margin: '0 auto' }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 24 }}>
             <time dateTime={post.date}>{post.dateDisplay}</time> · {post.read} min read · {wordCount.toLocaleString()} words
             {post.updated !== post.date && <> · Updated <time dateTime={post.updated}>{new Date(post.updated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</time></>}
@@ -623,7 +626,7 @@ function ArticleReader({ post, accent, onClose, onOpen, related }) {
 
         {/* related posts */}
         {related.length > 0 && (
-          <div style={{ background: 'var(--surface-alt)', padding: '48px 72px', borderTop: '1px solid var(--hair)' }}>
+          <div style={{ background: 'var(--surface-alt)', padding: isMobile ? '32px 20px' : '48px 72px', borderTop: '1px solid var(--hair)' }}>
             <div style={{ maxWidth: 760, margin: '0 auto' }}>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-dim)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 24 }}>Keep reading</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>

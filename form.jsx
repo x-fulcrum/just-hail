@@ -1,6 +1,7 @@
 /* Multi-section smart form with live validation + CTA banner + footer + nav */
 
 function Nav({ accent, scrolled }) {
+  const isMobile = useIsMobile(900);
   const links = [
     { href: '#services', label: 'Services' },
     { href: '#process', label: 'Process' },
@@ -11,33 +12,47 @@ function Nav({ accent, scrolled }) {
   return (
     <nav style={{
       position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
-      padding: scrolled ? '14px 40px' : '24px 40px',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: isMobile ? (scrolled ? '10px 16px' : '14px 16px') : (scrolled ? '14px 40px' : '24px 40px'),
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
       background: scrolled ? 'color-mix(in oklab, var(--bg), transparent 20%)' : 'transparent',
       backdropFilter: scrolled ? 'blur(14px)' : 'none',
       borderBottom: scrolled ? '1px solid var(--hair)' : '1px solid transparent',
       transition: 'all 300ms',
     }}>
-      <a href="#" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'var(--ink)' }}>
-        <img src="logo.webp" alt="Just Hail" style={{ height: 52, width: 'auto', display: 'block', filter: 'var(--logo-filter, none)' }} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.14em', paddingLeft: 16, borderLeft: '1px solid var(--hair-strong)', lineHeight: 1.35 }}>
-          EST. 2008<br/>LEANDER · TX
-        </span>
+      <a href="#" style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, textDecoration: 'none', color: 'var(--ink)', minWidth: 0 }}>
+        <img src="logo.webp" alt="Just Hail" style={{ height: isMobile ? 36 : 52, width: 'auto', display: 'block', filter: 'var(--logo-filter, none)' }} />
+        {!isMobile && (
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.14em', paddingLeft: 16, borderLeft: '1px solid var(--hair-strong)', lineHeight: 1.35 }}>
+            EST. 2008<br/>LEANDER · TX
+          </span>
+        )}
       </a>
-      <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
-        {links.map(l => (
+      <div style={{ display: 'flex', gap: isMobile ? 8 : 32, alignItems: 'center' }}>
+        {!isMobile && links.map(l => (
           <a key={l.href} href={l.href} style={{
             fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--ink-dim)',
             textDecoration: 'none', transition: 'color 200ms',
           }} onMouseEnter={e=>e.currentTarget.style.color='var(--ink)'} onMouseLeave={e=>e.currentTarget.style.color='var(--ink-dim)'}>{l.label}</a>
         ))}
+        {isMobile && (
+          <a href="tel:+15122213013" aria-label="Call Just Hail" style={{
+            width: 40, height: 40, borderRadius: '50%',
+            border: '1px solid var(--hair-strong)', color: 'var(--ink)',
+            textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+          </a>
+        )}
         <a href="#contact" style={{
-          fontFamily: 'var(--font-ui)', fontSize: 14,
-          padding: '10px 18px', background: accent, color: '#0a0b10',
+          fontFamily: 'var(--font-ui)', fontSize: isMobile ? 13 : 14,
+          padding: isMobile ? '9px 14px' : '10px 18px', background: accent, color: '#0a0b10',
           textDecoration: 'none', borderRadius: 4, fontWeight: 500,
-          display: 'inline-flex', alignItems: 'center', gap: 8,
+          display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
         }}>
-          Request estimate
+          {isMobile ? 'Estimate' : 'Request estimate'}
           <span>→</span>
         </a>
       </div>
@@ -296,10 +311,11 @@ const labelStyle = {
 };
 
 function FormGroup({ label, children, last }) {
+  const isMobile = useIsMobile(640);
   return (
     <div style={{ borderTop: '1px solid var(--hair)', padding: '32px 0', marginBottom: last ? 0 : 0 }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-dim)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 24 }}>{label}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 24 }}>{children}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: isMobile ? 20 : 24 }}>{children}</div>
     </div>
   );
 }
@@ -332,11 +348,12 @@ function Field({ label, v, k, touched, errors, onChange, onBlur, placeholder, ty
 }
 
 function ContactBlock({ accent }) {
+  const isMobile = useIsMobile(900);
   return (
-    <section id="contact" style={{ padding: '160px 0', borderBottom: '1px solid var(--hair)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px', display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 80 }}>
+    <section id="contact" style={{ padding: isMobile ? '96px 0' : '160px 0', borderBottom: '1px solid var(--hair)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.6fr', gap: isMobile ? 48 : 80 }}>
         <Reveal>
-          <div style={{ position: 'sticky', top: 120 }}>
+          <div style={{ position: isMobile ? 'static' : 'sticky', top: 120 }}>
             <Eyebrow>08 — Get an estimate</Eyebrow>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(40px, 5vw, 72px)', lineHeight: 1, margin: '14px 0 32px', fontWeight: 400, letterSpacing: '-0.02em' }}>
               Tell us about <em style={{ color: accent, fontStyle: 'italic' }}>your storm.</em>
@@ -372,24 +389,25 @@ function InfoRow({ label, value, href }) {
 
 function CTABanner({ accent }) {
   const [ref, inView] = useInView();
+  const isMobile = useIsMobile(900);
   return (
     <section ref={ref} style={{
       padding: '0', borderBottom: '1px solid var(--hair)',
       position: 'relative', overflow: 'hidden',
     }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 600 }}>
-        <div style={{ position: 'relative', overflow: 'hidden', background: '#000' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', minHeight: isMobile ? 0 : 600 }}>
+        <div style={{ position: 'relative', overflow: 'hidden', background: '#000', minHeight: isMobile ? 260 : 'auto' }}>
           <img src="img/handoff.png" alt="Customer receiving keys at Just Hail" style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
             opacity: 0.9,
           }} />
-          <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, transparent 60%, var(--bg) 100%)` }} />
+          <div style={{ position: 'absolute', inset: 0, background: isMobile ? 'linear-gradient(180deg, transparent 40%, rgba(10,11,16,0.5) 100%)' : `linear-gradient(90deg, transparent 60%, var(--bg) 100%)` }} />
           <div style={{ position: 'absolute', bottom: 24, left: 24, fontFamily: 'var(--font-mono)', fontSize: 11, color: '#fff', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'flex', gap: 8, alignItems: 'center' }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent }} />
             Handoff · 2025 Honda CR-V · Marcus D.
           </div>
         </div>
-        <div style={{ padding: '120px 60px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div style={{ padding: isMobile ? '64px 20px' : '120px 60px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <Reveal>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: accent, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 24 }}>
               · Now booking · April storm season ·
@@ -421,11 +439,12 @@ function CTABanner({ accent }) {
 }
 
 function Footer({ accent }) {
+  const isMobile = useIsMobile(900);
   return (
-    <footer style={{ padding: '80px 0 40px', background: 'var(--surface-alt)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 60, marginBottom: 80 }}>
-          <div>
+    <footer style={{ padding: isMobile ? '60px 0 30px' : '80px 0 40px', background: 'var(--surface-alt)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : '2fr 1fr 1fr 1fr', gap: isMobile ? 32 : 60, marginBottom: isMobile ? 48 : 80 }}>
+          <div style={{ gridColumn: isMobile ? 'span 2' : 'auto' }}>
             <img src="logo.webp" alt="Just Hail" style={{ height: 40, width: 'auto', display: 'block', marginBottom: 24, filter: 'var(--logo-filter, none)' }} />
             <p style={{ fontSize: 14, color: 'var(--ink-dim)', lineHeight: 1.65, maxWidth: 360, margin: 0 }}>
               Family-owned auto hail restoration. A+ BBB rated. 100+ years combined technician experience. Paintless dent repair that preserves the finish you paid for.

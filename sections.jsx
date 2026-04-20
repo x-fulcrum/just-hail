@@ -1,5 +1,17 @@
 /* Sections: marquee, metrics, features, testimonials, FAQ, resources, CTA, footer */
 
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = React.useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < breakpoint
+  );
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 function useInView(options = {}) {
   const ref = React.useRef(null);
   const [inView, setInView] = React.useState(false);
@@ -116,6 +128,7 @@ function Marquee({ items, accent }) {
 }
 
 function Metrics({ accent }) {
+  const isMobile = useIsMobile(900);
   const stats = [
     { label: 'Years in business', value: 17, suffix: '' },
     { label: 'Vehicles restored', value: 24800, suffix: '+' },
@@ -123,8 +136,8 @@ function Metrics({ accent }) {
     { label: 'Typical out-of-pocket', value: 0, suffix: '$', prefix: true },
   ];
   return (
-    <section style={{ padding: '140px 0', borderBottom: '1px solid var(--hair)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px' }}>
+    <section style={{ padding: isMobile ? '80px 0' : '140px 0', borderBottom: '1px solid var(--hair)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px' }}>
         <Reveal>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 80, flexWrap: 'wrap', gap: 24 }}>
             <div>
@@ -178,6 +191,7 @@ function Eyebrow({ children }) {
 }
 
 function Features({ accent }) {
+  const isMobile = useIsMobile(900);
   const items = [
     {
       title: 'Paintless Dent Repair',
@@ -217,8 +231,8 @@ function Features({ accent }) {
     },
   ];
   return (
-    <section id="services" style={{ padding: '160px 0', borderBottom: '1px solid var(--hair)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px' }}>
+    <section id="services" style={{ padding: isMobile ? '96px 0' : '160px 0', borderBottom: '1px solid var(--hair)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px' }}>
         <Reveal>
           <Eyebrow>03 — Services</Eyebrow>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(48px, 6vw, 88px)', lineHeight: 1, margin: '14px 0 80px', fontWeight: 400, letterSpacing: '-0.02em', maxWidth: 900 }}>
@@ -336,6 +350,7 @@ function Glyph({ name, accent, hover }) {
 }
 
 function Process({ accent }) {
+  const isMobile = useIsMobile(900);
   const steps = [
     { n: '01', t: 'Estimate', b: 'Upload photos or swing by. We map every dent with a 3D panel scan and bond a price within 24 hours.' },
     { n: '02', t: 'Claim', b: 'We file with your carrier directly. Deductible often waived under "act of nature" coverage.' },
@@ -344,8 +359,8 @@ function Process({ accent }) {
     { n: '05', t: 'Delivery', b: 'Hand-washed, detailed, and walked through with you. Lifetime warranty attached before you leave.' },
   ];
   return (
-    <section style={{ padding: '160px 0', borderBottom: '1px solid var(--hair)', background: 'var(--surface-alt)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px' }}>
+    <section style={{ padding: isMobile ? '96px 0' : '160px 0', borderBottom: '1px solid var(--hair)', background: 'var(--surface-alt)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px' }}>
         <Reveal>
           <Eyebrow>04 — How it works</Eyebrow>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(48px, 6vw, 88px)', lineHeight: 1, margin: '14px 0 24px', fontWeight: 400, letterSpacing: '-0.02em' }}>
@@ -371,6 +386,7 @@ function Process({ accent }) {
 }
 
 function Testimonials({ accent }) {
+  const isMobile = useIsMobile(900);
   const quotes = [
     {
       q: "Truck came out of the North Texas storm looking like a golf ball. Just Hail's crew had it flawless in four days and I paid nothing. Photographs at every step. Unreal.",
@@ -403,8 +419,8 @@ function Testimonials({ accent }) {
     return () => clearInterval(t);
   }, []);
   return (
-    <section id="reviews" style={{ padding: '160px 0', borderBottom: '1px solid var(--hair)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px' }}>
+    <section id="reviews" style={{ padding: isMobile ? '96px 0' : '160px 0', borderBottom: '1px solid var(--hair)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px' }}>
         <Reveal>
           <Eyebrow>05 — Reviews</Eyebrow>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 24, marginTop: 14, marginBottom: 64 }}>
@@ -456,6 +472,7 @@ function Testimonials({ accent }) {
 }
 
 function FAQ({ accent }) {
+  const isMobile = useIsMobile(900);
   const items = [
     { q: 'What exactly is paintless dent repair?', a: 'A certified technician uses specialty rods and pullers to massage the metal back to its factory shape from behind the panel. Because we never grind, fill, or repaint, your original finish stays intact—so the car retains its original-paint value at resale.' },
     { q: 'Do I really pay nothing out of pocket?', a: 'In most hail claims in Texas, yes. Comprehensive coverage usually carries a deductible, and we routinely negotiate a waiver as part of the "act of nature" clause. If any cost remains, we tell you in writing before work begins.' },
@@ -466,10 +483,10 @@ function FAQ({ accent }) {
   ];
   const [open, setOpen] = React.useState(0);
   return (
-    <section id="faq" style={{ padding: '160px 0', borderBottom: '1px solid var(--hair)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)', gap: 80 }}>
+    <section id="faq" style={{ padding: isMobile ? '96px 0' : '160px 0', borderBottom: '1px solid var(--hair)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 2fr)', gap: isMobile ? 40 : 80 }}>
         <Reveal>
-          <div style={{ position: 'sticky', top: 120 }}>
+          <div style={{ position: isMobile ? 'static' : 'sticky', top: 120 }}>
             <Eyebrow>06 — Questions</Eyebrow>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(40px, 5vw, 72px)', lineHeight: 1, margin: '14px 0 24px', fontWeight: 400, letterSpacing: '-0.02em' }}>
               Everything <em style={{ color: accent, fontStyle: 'italic' }}>you'd ask</em> a friend in the business.
@@ -515,4 +532,4 @@ function FAQ({ accent }) {
   );
 }
 
-Object.assign(window, { Marquee, Metrics, Features, Process, Testimonials, FAQ, Reveal, Eyebrow, INSURERS, useInView, CountUp });
+Object.assign(window, { Marquee, Metrics, Features, Process, Testimonials, FAQ, Reveal, Eyebrow, INSURERS, useInView, CountUp, useIsMobile });

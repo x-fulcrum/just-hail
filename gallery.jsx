@@ -1,6 +1,7 @@
 /* Gallery section with real shop photos + lightbox */
 
 function Gallery({ accent }) {
+  const isMobile = useIsMobile(900);
   const shots = [
     { src: 'img/damage-closeup.webp', label: 'Pre-repair · Hail damage to black coupe hood', w: 2, h: 1 },
     { src: 'img/before-after.webp', label: 'Reflected-light inspection · F250 hood', w: 2, h: 1 },
@@ -22,17 +23,17 @@ function Gallery({ accent }) {
   }, [lightbox, shots.length]);
 
   return (
-    <section style={{ padding: '160px 0', borderBottom: '1px solid var(--hair)', background: 'var(--surface-alt)' }}>
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '0 40px' }}>
+    <section style={{ padding: isMobile ? '96px 0' : '160px 0', borderBottom: '1px solid var(--hair)', background: 'var(--surface-alt)' }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 20px' : '0 40px' }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '360px 1fr',
-          gap: 56,
+          gridTemplateColumns: isMobile ? '1fr' : '360px 1fr',
+          gap: isMobile ? 36 : 56,
           alignItems: 'start',
         }}>
           {/* LEFT — copy column */}
           <Reveal>
-            <div style={{ position: 'sticky', top: 120 }}>
+            <div style={{ position: isMobile ? 'static' : 'sticky', top: 120 }}>
               <Eyebrow>· The shop</Eyebrow>
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(40px, 4.2vw, 64px)', lineHeight: 1.02, margin: '14px 0 24px', fontWeight: 400, letterSpacing: '-0.02em' }}>
                 Real work. <em style={{ color: accent, fontStyle: 'italic' }}>Real cars.</em>
@@ -50,13 +51,13 @@ function Gallery({ accent }) {
           {/* RIGHT — photo stack */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
             gap: 14,
           }}>
             {shots.map((s, i) => (
               <Reveal key={i} delay={i * 70} style={{
-                gridColumn: `span ${Math.min(s.w, 2)}`,
-                aspectRatio: s.w >= 2 ? (s.w === 4 ? '16 / 7' : '16 / 9') : '4 / 3',
+                gridColumn: isMobile ? 'auto' : `span ${Math.min(s.w, 2)}`,
+                aspectRatio: isMobile ? '4 / 3' : (s.w >= 2 ? (s.w === 4 ? '16 / 7' : '16 / 9') : '4 / 3'),
               }}>
                 <GalleryTile src={s.src} label={s.label} accent={accent} onClick={() => setLightbox(i)} />
               </Reveal>

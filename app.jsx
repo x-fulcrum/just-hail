@@ -20,6 +20,7 @@ const HERO_VARIANTS = [
 ];
 
 function App() {
+  const isMobile = useIsMobile(900);
   const [cfg, setCfg] = React.useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('jh-cfg')||'null') || {};
@@ -124,7 +125,7 @@ function App() {
         }} />
         <div style={{
           position: 'relative', zIndex: 3, maxWidth: 1280, margin: '0 auto',
-          padding: '180px 40px 120px', minHeight: '100vh',
+          padding: isMobile ? '120px 20px 80px' : '180px 40px 120px', minHeight: '100vh',
           display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
           color: '#f5f3ee',
         }}>
@@ -172,10 +173,10 @@ function App() {
 
           {/* Floating hero data strip */}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1,
+            display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 1,
             background: 'rgba(245,243,238,0.15)',
             border: '1px solid rgba(245,243,238,0.18)',
-            marginTop: 64,
+            marginTop: isMobile ? 40 : 64,
             backdropFilter: 'blur(14px)',
             WebkitBackdropFilter: 'blur(14px)',
           }}>
@@ -187,10 +188,10 @@ function App() {
             ].map((item, i) => (
               <div key={i} style={{
                 background: 'rgba(10,11,16,0.55)',
-                padding: '24px 24px',
-                display: 'flex', alignItems: 'center', gap: 16,
+                padding: isMobile ? '16px 14px' : '24px 24px',
+                display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16,
               }}>
-                {item.img && <img src={item.img} alt="BBB Accredited Business" style={{ height: 52, width: 'auto', flexShrink: 0, filter: 'brightness(1.1)' }} />}
+                {item.img && <img src={item.img} alt="BBB Accredited Business" style={{ height: isMobile ? 36 : 52, width: 'auto', flexShrink: 0, filter: 'brightness(1.1)' }} />}
                 <div>
                   {item.stars && (
                     <div style={{ display: 'flex', gap: 3, marginBottom: 6 }} aria-label="5 out of 5 stars">
@@ -201,8 +202,8 @@ function App() {
                       ))}
                     </div>
                   )}
-                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 400, letterSpacing: '-0.01em', color: '#f5f3ee' }}>{item.k}</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'rgba(245,243,238,0.65)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 8 }}>{item.v}</div>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: isMobile ? 20 : 28, fontWeight: 400, letterSpacing: '-0.01em', color: '#f5f3ee' }}>{item.k}</div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: isMobile ? 9 : 11, color: 'rgba(245,243,238,0.65)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: isMobile ? 4 : 8 }}>{item.v}</div>
                 </div>
               </div>
             ))}
