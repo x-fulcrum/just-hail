@@ -1,6 +1,6 @@
 {
   "name": "just-hail-website",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Just Hail — paintless dent repair site with Claude-powered photo triage and chat.",
   "engines": {
