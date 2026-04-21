@@ -1156,11 +1156,16 @@ async function showCampaignsMapView() {
           <h2 style="margin: 6px 0 0; font-family: var(--font-display); font-size: 22px; font-weight: 400;">Every campaign, every polygon</h2>
           <div class="mono dim" style="font-size: 11px; margin-top: 4px;" id="mapStatsLine">Loading...</div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <label class="mono dim" style="font-size: 11px; cursor: pointer; display: flex; gap: 6px; align-items: center;">
             <input id="mapShowLabels" type="checkbox" checked style="width: auto; height: auto;" />
             Labels
           </label>
+          <label class="mono" style="font-size: 11px; cursor: pointer; display: flex; gap: 6px; align-items: center; color: var(--ink);">
+            <input id="mapShowSwaths" type="checkbox" style="width: auto; height: auto;" />
+            <span>Hail swaths</span>
+          </label>
+          <input id="mapSwathDate" type="date" style="width: auto; font-size: 11px; padding: 4px 8px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--hair-strong);" />
           <button class="btn btn-ghost" id="mapCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
         </div>
       </div>
@@ -1274,6 +1279,134 @@ function renderAllPolygonsMap(campaigns, retries = 0) {
   }
 
   document.getElementById('mapLegend').innerHTML = legendRows.join('');
+
+  // ---------- Swath overlay wiring ----------
+  // Default the date picker to today; load if toggled on; refetch on
+  // date-change, toggle, or map pan/zoom (debounced).
+  const dateInput = document.getElementById('mapSwathDate');
+  const toggle = document.getElementById('mapShowSwaths');
+  if (dateInput && !dateInput.value) {
+    const d = new Date();
+    dateInput.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  let swathLayer = null;
+  let refetchTimer = null;
+  const refetchSwaths = () => {
+    clearTimeout(refetchTimer);
+    refetchTimer = setTimeout(() => loadSwaths(map, dateInput, toggle, (l) => { swathLayer = l; }), 250);
+  };
+  const clearSwaths = () => {
+    if (swathLayer) { map.removeLayer(swathLayer); swathLayer = null; }
+  };
+
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) refetchSwaths();
+    else clearSwaths();
+  });
+  dateInput.addEventListener('change', () => {
+    if (toggle.checked) { clearSwaths(); refetchSwaths(); }
+  });
+  map.on('moveend', () => {
+    if (toggle.checked) { clearSwaths(); refetchSwaths(); }
+  });
+}
+
+// Fetch + render hail swaths from IHM for the current date + viewport.
+async function loadSwaths(map, dateInput, toggle, setLayer) {
+  if (!toggle.checked) return;
+  const b = map.getBounds();
+  const iso = dateInput.value;
+  if (!iso) return;
+  const [y, m, d] = iso.split('-');
+  const date = `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+
+  const url = `/api/admin/ihm-swaths?date=${encodeURIComponent(date)}&neLat=${b.getNorth()}&neLng=${b.getEast()}&swLat=${b.getSouth()}&swLng=${b.getWest()}`;
+
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (err) {
+    console.warn('swath fetch failed:', err);
+    return;
+  }
+  const json = await res.json().catch(() => null);
+  if (!json || !json.ok) {
+    console.warn('swath endpoint returned error:', json?.error);
+    return;
+  }
+
+  // IHM swath response shape isn't fully documented; handle both array and
+  // object-with-array forms defensively. Each item should have an encoded
+  // polyline (Google polyline format) in `p` and a size/level indicator.
+  const rawSwaths = Array.isArray(json.data)
+    ? json.data
+    : (json.data?.swaths || json.data?.data || json.data?.hail || []);
+
+  if (!Array.isArray(rawSwaths) || rawSwaths.length === 0) {
+    console.warn('no swaths in response for', date, json.data);
+    return;
+  }
+
+  const layer = window.L.layerGroup();
+  for (const s of rawSwaths) {
+    // Try to extract coords — support both encoded polyline and raw array
+    let coords = null;
+    if (typeof s.p === 'string') coords = decodePolylineBrowser(s.p);
+    else if (Array.isArray(s.points)) coords = s.points.map((p) => [p.lat, p.lng]);
+    else if (Array.isArray(s.coords)) coords = s.coords;
+    if (!coords || coords.length < 3) continue;
+
+    const sizeIn = s.size ?? s.sizeIn ?? s.hailSize ?? null;
+    const color = hailSizeColor(sizeIn);
+
+    window.L.polygon(coords, {
+      color,
+      weight: 1,
+      fillColor: color,
+      fillOpacity: 0.28,
+      interactive: true,
+    }).bindPopup(
+      `<div style="color:#111;font-size:12px;">
+        <strong>Hail swath</strong><br>
+        Size: ${sizeIn != null ? sizeIn + '"' : 'unknown'}
+      </div>`
+    ).addTo(layer);
+  }
+  layer.addTo(map);
+  setLayer(layer);
+}
+
+// Color hail swaths by size — yellow (small) → red → purple (>2.5")
+function hailSizeColor(sizeIn) {
+  if (sizeIn == null) return '#888';
+  const s = parseFloat(sizeIn);
+  if (s >= 2.5) return '#8b00ff';
+  if (s >= 2.0) return '#d92020';
+  if (s >= 1.5) return '#ff6200';
+  if (s >= 1.0) return '#ffa500';
+  if (s >= 0.5) return '#ffd700';
+  return '#bababa';
+}
+
+// Google polyline decoder — same algorithm as server-side, duplicated
+// here for client-side rendering (not worth round-tripping to server)
+function decodePolylineBrowser(str) {
+  if (!str) return [];
+  let index = 0, lat = 0, lng = 0;
+  const coords = [];
+  while (index < str.length) {
+    let b, shift = 0, result = 0;
+    do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20 && index < str.length);
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+    shift = 0; result = 0;
+    do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20 && index < str.length);
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+    coords.push([lat * 1e-5, lng * 1e-5]);
+  }
+  return coords;
 }
 
 // Expose for popup onclick handler
