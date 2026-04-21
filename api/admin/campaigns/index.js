@@ -37,8 +37,8 @@ async function createCampaign(req, res) {
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: 'name is required' });
   }
-  if (!['zip', 'polygon', 'radius', 'address_list'].includes(target_type)) {
-    return res.status(400).json({ error: 'target_type must be zip | polygon | radius | address_list' });
+  if (!['zip', 'polygon', 'radius', 'address_list', 'ihm_territory'].includes(target_type)) {
+    return res.status(400).json({ error: 'target_type must be zip | polygon | radius | address_list | ihm_territory' });
   }
   if (!target_input || typeof target_input !== 'object') {
     return res.status(400).json({ error: 'target_input object is required' });

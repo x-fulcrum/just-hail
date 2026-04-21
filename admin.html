@@ -113,12 +113,29 @@
         <div>
           <div class="eyebrow" style="color: var(--accent);">· Storm Campaigns</div>
           <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Virtual door knock</h1>
-          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Target a storm zone. BatchData enriches every property in the polygon with owner contact info. Preview → approve → launch outreach.</p>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Draw a polygon in IHM → click "Retrieve Contact Data" → paste the URL below with a note. Every polygon becomes its own campaign.</p>
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
           <button class="btn btn-ghost" id="campRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
-          <button class="btn" id="campNewBtn" style="font-size: 13px; padding: 10px 18px;">+ New campaign</button>
         </div>
+      </div>
+
+      <!-- IHM import form -->
+      <div class="card" style="padding: 20px 24px; margin-bottom: 20px;">
+        <form id="ihmImportForm" style="display: grid; grid-template-columns: 2fr 2fr auto; gap: 12px; align-items: end;">
+          <div>
+            <label class="eyebrow" style="display: block; margin-bottom: 8px;">IHM Territory URL or ID</label>
+            <input id="ihmUrl" type="text" required placeholder="https://maps.interactivehailmaps.com/Territory/Details/177827?idr=true" style="width: 100%;" />
+          </div>
+          <div>
+            <label class="eyebrow" style="display: block; margin-bottom: 8px;">Your note / label</label>
+            <input id="ihmNote" type="text" required placeholder="e.g. Fern Bluff — 4/18 hail, 1.75&quot;+" style="width: 100%;" />
+          </div>
+          <div>
+            <button type="submit" class="btn" id="ihmSubmit" style="font-size: 13px; padding: 12px 20px; white-space: nowrap;">Pull from IHM →</button>
+          </div>
+        </form>
+        <div id="ihmImportStatus" class="mono" style="font-size: 11px; margin-top: 12px; min-height: 16px;"></div>
       </div>
 
       <!-- Campaign list -->
@@ -127,8 +144,8 @@
           <thead>
             <tr>
               <th style="width: 110px;">Created</th>
-              <th>Name</th>
-              <th style="width: 90px;">Target</th>
+              <th>Note / Label</th>
+              <th style="width: 110px;">Territory</th>
               <th style="width: 110px;">Status</th>
               <th style="width: 90px; text-align: right;">Properties</th>
               <th style="width: 90px; text-align: right;">Contacts</th>
@@ -138,7 +155,7 @@
           <tbody id="campBody">
             <tr><td colspan="7" class="empty" style="padding: 40px;">
               <div class="big">No campaigns yet.</div>
-              <div>Click "+ New campaign" to create one.</div>
+              <div>Paste an IHM Territory URL above to create your first one.</div>
             </td></tr>
           </tbody>
         </table>
@@ -404,10 +421,21 @@ function campStatusBadge(status) {
 }
 
 function targetLabel(c) {
-  if (c.target_type === 'zip')    return c.target_input.zip;
-  if (c.target_type === 'radius') return `${c.target_input.radius_miles}mi`;
+  if (c.target_type === 'ihm_territory') return `T#${c.target_input.territory_id}`;
+  if (c.target_type === 'zip')     return c.target_input.zip;
+  if (c.target_type === 'radius')  return `${c.target_input.radius_miles}mi`;
   if (c.target_type === 'polygon') return `${c.target_input.polygon.length} pts`;
   return c.target_type;
+}
+
+// Extract IHM territory ID from a full URL or a raw ID.
+function extractIhmTerritoryId(input) {
+  if (!input) return null;
+  const s = String(input).trim();
+  const urlMatch = s.match(/\/Territory\/Details\/(\d+)/i);
+  if (urlMatch) return parseInt(urlMatch[1], 10);
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  return null;
 }
 
 async function renderCampaigns() {
@@ -426,29 +454,27 @@ async function renderCampaigns() {
     }
 
     campBodyEl.innerHTML = campaigns.map((c) => {
-      const created = new Date(c.created_at).toLocaleDateString([], { month:'short', day:'numeric' });
-      const enrichBtn = (c.status === 'draft')
-        ? `<button class="btn btn-ghost camp-enrich" data-id="${c.id}" style="font-size:11px;padding:6px 10px;">Enrich</button>`
-        : (c.status === 'enriching')
-          ? `<span class="spin"></span>`
-          : `<button class="btn btn-ghost camp-open" data-id="${c.id}" style="font-size:11px;padding:6px 10px;">Open</button>`;
+      const created = new Date(c.created_at).toLocaleDateString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      const actions = `
+        <button class="btn btn-ghost camp-open" data-id="${c.id}" style="font-size:11px;padding:6px 10px;">Open</button>
+      `;
+      const territoryLink = (c.target_type === 'ihm_territory' && c.target_input?.territory_id)
+        ? `<a href="https://maps.interactivehailmaps.com/Territory/Details/${c.target_input.territory_id}?idr=true" target="_blank" rel="noopener" class="mono" style="font-size: 10px; color: var(--ink-dim); text-decoration: underline dotted;">${targetLabel(c)}</a>`
+        : `<span class="mono dim" style="font-size: 10px;">${targetLabel(c)}</span>`;
       return `
         <tr>
           <td class="mono" style="font-size: 11px;">${created}</td>
-          <td><strong>${c.name}</strong>${c.storm_event_id ? `<br><span class="mono dim" style="font-size:10px;">storm #${c.storm_event_id}</span>` : ''}</td>
-          <td class="mono" style="font-size: 11px;">${c.target_type}<br><span class="dim">${targetLabel(c)}</span></td>
+          <td><strong>${escapeHtml(c.name)}</strong>${c.storm_event_id ? `<br><span class="mono dim" style="font-size:10px;">storm #${c.storm_event_id}</span>` : ''}</td>
+          <td>${territoryLink}</td>
           <td>${campStatusBadge(c.status)}</td>
           <td class="mono" style="font-size: 12px; text-align: right;">${c.property_hits ?? '—'}</td>
           <td class="mono" style="font-size: 12px; text-align: right;">${c.contact_hits ?? '—'}</td>
-          <td style="text-align: right;">${enrichBtn}</td>
+          <td style="text-align: right;">${actions}</td>
         </tr>
       `;
     }).join('');
 
-    // Wire enrichment buttons
-    campBodyEl.querySelectorAll('.camp-enrich').forEach((b) => {
-      b.addEventListener('click', () => enrichCampaign(b.dataset.id, b));
-    });
+    // Wire action buttons
     campBodyEl.querySelectorAll('.camp-open').forEach((b) => {
       b.addEventListener('click', () => openCampaign(b.dataset.id));
     });
@@ -783,8 +809,78 @@ function showNewCampaignModal() {
   });
 }
 
-campNewBtn.addEventListener('click', showNewCampaignModal);
 campRefreshBtn.addEventListener('click', renderCampaigns);
+
+// ---------- IHM import form: paste URL → creates campaign + imports ----------
+const ihmForm = document.getElementById('ihmImportForm');
+if (ihmForm) {
+  ihmForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const urlEl   = document.getElementById('ihmUrl');
+    const noteEl  = document.getElementById('ihmNote');
+    const btn     = document.getElementById('ihmSubmit');
+    const statusEl= document.getElementById('ihmImportStatus');
+
+    const territoryId = extractIhmTerritoryId(urlEl.value);
+    const note = noteEl.value.trim();
+
+    if (!territoryId) {
+      statusEl.innerHTML = '<span style="color: var(--accent);">Couldn\'t find Territory ID in that URL. Paste the full /Territory/Details/NNN URL or just the number.</span>';
+      return;
+    }
+    if (!note) {
+      statusEl.innerHTML = '<span style="color: var(--accent);">Note is required — so you can find this polygon later.</span>';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Creating...';
+    statusEl.innerHTML = '<span style="color: var(--ink-dim);">Creating campaign + pulling contacts from IHM...</span>';
+
+    try {
+      // Step 1: create campaign
+      const createRes = await fetch('/api/admin/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: note,
+          target_type: 'ihm_territory',
+          target_input: { territory_id: territoryId, url: urlEl.value.trim() || null },
+        }),
+      });
+      const created = await createRes.json();
+      if (!createRes.ok) throw new Error(created.error || 'create campaign failed');
+      const campaignId = created.campaign.id;
+
+      // Step 2: import contacts from IHM
+      statusEl.innerHTML = '<span style="color: var(--ink-dim);">Scraping IHM for Territory #' + territoryId + '...</span>';
+      const impRes = await fetch(`/api/admin/campaigns/${campaignId}/import-from-ihm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ territory_id: territoryId }),
+      });
+      const imp = await impRes.json();
+
+      if (!impRes.ok || imp.ok === false) {
+        if (imp.reason === 'no_contacts_parsed') {
+          statusEl.innerHTML = `<span style="color: var(--amber);">Campaign created, but IHM returned no contacts for Territory #${territoryId}.</span><br>Did you click "Retrieve Contact Data" on that territory in IHM? Or open <a href="https://maps.interactivehailmaps.com/Territory/Details/${territoryId}?idr=true" target="_blank">this link</a> to auto-trigger retrieval, then try again.`;
+        } else {
+          statusEl.innerHTML = `<span style="color: var(--accent);">Import failed: ${imp.error || imp.details || 'unknown'}</span>`;
+        }
+      } else {
+        statusEl.innerHTML = `<span style="color: var(--green);">✓ Campaign "${escapeHtml(note)}" created with ${imp.imported} leads from Territory #${territoryId}.</span>`;
+        urlEl.value = '';
+        noteEl.value = '';
+      }
+    } catch (err) {
+      statusEl.innerHTML = `<span style="color: var(--accent);">Error: ${err.message}</span>`;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Pull from IHM →';
+      renderCampaigns();
+    }
+  });
+}
 
 // =========================================================
 // AUTH GATE
