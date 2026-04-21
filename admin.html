@@ -119,6 +119,7 @@
           <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Draw a polygon in IHM → click "Retrieve Contact Data" → paste the URL below with a note. Every polygon becomes its own campaign.</p>
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="btn" id="campMapViewBtn" title="See every campaign polygon you've ever pulled, overlaid on one satellite map. Find gaps in your territory coverage." style="font-size: 12px; padding: 8px 14px;">🗺 Map view</button>
           <button class="btn btn-ghost" id="campRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
         </div>
       </div>
@@ -1139,6 +1140,144 @@ function showNewCampaignModal() {
 }
 
 campRefreshBtn.addEventListener('click', renderCampaigns);
+document.getElementById('campMapViewBtn').addEventListener('click', showCampaignsMapView);
+
+// =========================================================
+// CAMPAIGNS MAP VIEW — all polygons on one satellite map
+// =========================================================
+async function showCampaignsMapView() {
+  const drawerHost = document.getElementById('drawerHost');
+  drawerHost.innerHTML = `
+    <div class="drawer-backdrop" id="mapViewBackdrop"></div>
+    <div class="drawer" style="width: 1400px; max-width: 100vw; top: 0; right: 0; bottom: 0; padding: 0; display: flex; flex-direction: column;">
+      <div style="padding: 18px 24px; border-bottom: 1px solid var(--hair); display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+        <div>
+          <div class="eyebrow">· Territory Coverage Map</div>
+          <h2 style="margin: 6px 0 0; font-family: var(--font-display); font-size: 22px; font-weight: 400;">Every campaign, every polygon</h2>
+          <div class="mono dim" style="font-size: 11px; margin-top: 4px;" id="mapStatsLine">Loading...</div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <label class="mono dim" style="font-size: 11px; cursor: pointer; display: flex; gap: 6px; align-items: center;">
+            <input id="mapShowLabels" type="checkbox" checked style="width: auto; height: auto;" />
+            Labels
+          </label>
+          <button class="btn btn-ghost" id="mapCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
+        </div>
+      </div>
+      <div id="mapViewMap" style="flex: 1; background: var(--surface-2); position: relative;"></div>
+      <div id="mapLegend" style="padding: 10px 24px; border-top: 1px solid var(--hair); background: var(--surface-2); font-size: 11px; color: var(--ink-dim); max-height: 120px; overflow-y: auto;"></div>
+    </div>
+  `;
+  const close = () => { drawerHost.innerHTML = ''; };
+  document.getElementById('mapViewBackdrop').addEventListener('click', close);
+  document.getElementById('mapCloseBtn').addEventListener('click', close);
+
+  // Fetch campaigns
+  let campaigns = [];
+  try {
+    const res = await fetch('/api/admin/campaigns?limit=200');
+    const data = await res.json();
+    campaigns = data.campaigns || [];
+  } catch (err) {
+    document.getElementById('mapStatsLine').textContent = 'Failed to load: ' + err.message;
+    return;
+  }
+
+  // Filter to those with polygons
+  const withPoly = campaigns.filter((c) => {
+    const p = c.target_input?.polygon;
+    return Array.isArray(p) && p.length >= 3;
+  });
+  const withoutPoly = campaigns.length - withPoly.length;
+
+  const totalLeads    = withPoly.reduce((s, c) => s + (c.property_hits || 0), 0);
+  const totalContacts = withPoly.reduce((s, c) => s + (c.contact_hits  || 0), 0);
+
+  document.getElementById('mapStatsLine').innerHTML =
+    `${withPoly.length} polygons on map · ${totalLeads.toLocaleString()} leads · ${totalContacts.toLocaleString()} with contact info` +
+    (withoutPoly ? ` · <span style="color: var(--amber);">${withoutPoly} campaigns have no polygon yet (re-import to populate)</span>` : '');
+
+  if (withPoly.length === 0) {
+    document.getElementById('mapViewMap').innerHTML = `
+      <div style="padding: 60px 20px; text-align: center; color: var(--ink-dim);">
+        <div style="font-family: var(--font-display); font-size: 28px; color: var(--ink); margin-bottom: 8px;">No polygons to show yet.</div>
+        <div>Pull an IHM Territory to see it here.</div>
+      </div>`;
+    return;
+  }
+
+  renderAllPolygonsMap(withPoly);
+}
+
+function renderAllPolygonsMap(campaigns, retries = 0) {
+  if (typeof window.L === 'undefined') {
+    if (retries >= 40) return;
+    return setTimeout(() => renderAllPolygonsMap(campaigns, retries + 1), 100);
+  }
+  const host = document.getElementById('mapViewMap');
+  if (!host) return;
+  host.innerHTML = '';
+
+  const map = window.L.map(host, { zoomControl: true, attributionControl: false });
+
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.55 }).addTo(map);
+
+  // Color palette — deterministic per campaign.id so a polygon's color is stable
+  const PALETTE = ['#e94f37','#39d7aa','#f3a83a','#5fa8ff','#c48cff','#ff6b9a','#6ee7b7','#ffd54f','#a5b4fc','#ff9e6b'];
+  const showLabels = document.getElementById('mapShowLabels').checked;
+
+  const allBounds = [];
+  const legendRows = [];
+
+  campaigns.forEach((c) => {
+    const color = PALETTE[c.id % PALETTE.length];
+    const latlngs = c.target_input.polygon.map((p) => [p.lat, p.lng]);
+
+    const poly = window.L.polygon(latlngs, {
+      color, weight: 2.5, fillColor: color, fillOpacity: 0.22,
+    }).addTo(map);
+
+    // Popup on click
+    const popupHtml = `
+      <div style="min-width: 220px; color: #111;">
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${escapeHtml(c.name)}</div>
+        <div style="font-size: 11px; color: #555; margin-bottom: 8px;">${new Date(c.created_at).toLocaleString()}</div>
+        <div style="font-size: 12px; margin-bottom: 3px;"><strong>${c.property_hits ?? '—'}</strong> leads · <strong>${c.contact_hits ?? '—'}</strong> with contact</div>
+        <div style="font-size: 11px; color: #555; margin-bottom: 8px;">Status: ${c.status}${c.target_input?.territory_id ? ` · T#${c.target_input.territory_id}` : ''}</div>
+        <button onclick="parent.drawerHost.innerHTML=''; window.openCampaign(${c.id});" style="padding: 5px 10px; font-size: 11px; background: #0a0b10; color: #fff; border: none; border-radius: 2px; cursor: pointer;">Open campaign →</button>
+      </div>
+    `;
+    poly.bindPopup(popupHtml);
+
+    // Optional on-map label at polygon center
+    if (showLabels) {
+      const center = poly.getBounds().getCenter();
+      window.L.marker(center, {
+        icon: window.L.divIcon({
+          className: 'campaign-label',
+          html: `<div style="background: rgba(10,11,16,0.85); color: #fff; padding: 3px 8px; border-left: 3px solid ${color}; font-family: ui-monospace,monospace; font-size: 10px; white-space: nowrap;">#${c.id} · ${escapeHtml(c.name.slice(0, 28))}${c.name.length > 28 ? '…' : ''} · ${c.property_hits ?? 0} leads</div>`,
+          iconSize: [null, null],
+        }),
+        interactive: false,
+      }).addTo(map);
+    }
+
+    allBounds.push(poly.getBounds());
+    legendRows.push(`<span style="display: inline-flex; align-items: center; gap: 6px; margin: 3px 10px 3px 0; padding: 2px 8px; border: 1px solid ${color}; border-radius: 2px;"><span style="width: 10px; height: 10px; background: ${color}; display: inline-block;"></span><span style="color: var(--ink);">#${c.id}</span> <span>${escapeHtml(c.name)}</span> <span class="dim">· ${c.property_hits ?? 0} leads</span></span>`);
+  });
+
+  // Fit bounds to union
+  if (allBounds.length) {
+    const unionBounds = allBounds.reduce((acc, b) => acc.extend(b), allBounds[0].pad(0.1));
+    map.fitBounds(unionBounds, { padding: [30, 30] });
+  }
+
+  document.getElementById('mapLegend').innerHTML = legendRows.join('');
+}
+
+// Expose for popup onclick handler
+window.openCampaign = openCampaign;
 
 // ---------- IHM import form: paste URL → creates campaign + imports ----------
 const ihmForm = document.getElementById('ihmImportForm');
