@@ -1250,6 +1250,11 @@ async function showCampaignsMapView() {
             <input id="mapShowSwaths" type="checkbox" style="width: auto; height: auto;" />
             <span>Hail swaths</span>
           </label>
+          <label id="mapSwathOpacityWrap" class="mono" style="display: none; font-size: 10px; color: var(--ink-dim); align-items: center; gap: 6px; letter-spacing: 0.08em; text-transform: uppercase;">
+            Opacity
+            <input id="mapSwathOpacity" type="range" min="5" max="85" value="35" step="5" style="width: 90px; height: 4px; accent-color: var(--accent); cursor: pointer;" />
+            <span id="mapSwathOpacityVal" style="min-width: 28px; text-align: right; font-variant-numeric: tabular-nums;">35%</span>
+          </label>
           <input id="mapSwathDate" type="date" style="width: auto; font-size: 11px; padding: 4px 8px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--hair-strong);" />
           <button class="btn btn-ghost" id="mapCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
         </div>
@@ -1388,9 +1393,28 @@ function renderAllPolygonsMap(campaigns, retries = 0) {
   };
 
   toggle.addEventListener('change', () => {
-    if (toggle.checked) { refetchSwaths(); showHailLegend(); }
-    else { clearSwaths(); hideHailLegend(); }
+    if (toggle.checked) { refetchSwaths(); showHailLegend(); showOpacityControl(); }
+    else { clearSwaths(); hideHailLegend(); hideOpacityControl(); }
   });
+
+  // Opacity slider — live-restyle polygons without refetching.
+  const opacityInput = document.getElementById('mapSwathOpacity');
+  const opacityVal   = document.getElementById('mapSwathOpacityVal');
+  if (opacityInput) {
+    opacityInput.addEventListener('input', () => {
+      const pct = parseInt(opacityInput.value, 10);
+      opacityVal.textContent = pct + '%';
+      const fillOpacity = pct / 100;
+      // Walk the active swath layer (if any) and restyle every tagged polygon.
+      if (swathLayer) {
+        swathLayer.eachLayer((child) => {
+          if (child._isSwathPoly && typeof child.setStyle === 'function') {
+            child.setStyle({ fillOpacity });
+          }
+        });
+      }
+    });
+  }
   dateInput.addEventListener('change', () => {
     if (toggle.checked) { clearSwaths(); refetchSwaths(); }
   });
@@ -1442,22 +1466,26 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
   let pinCount = 0;
 
   // --- Render swath polygons FIRST so pins stack on top ---
+  const currentOpacity = getSwathOpacity();
   for (const poly of polygons) {
     const latlngs = (poly.points || []).map((p) => [p.lat, p.lng]);
     if (latlngs.length < 3) continue;
     const color = swathTierColor(poly.sizeTier);
-    window.L.polygon(latlngs, {
+    const polyLayer = window.L.polygon(latlngs, {
       color,
       weight: 1.2,
       fillColor: color,
-      fillOpacity: 0.35,
+      fillOpacity: currentOpacity,
       interactive: true,
-    }).bindPopup(
+    });
+    polyLayer._isSwathPoly = true;  // tag so slider can find + restyle later
+    polyLayer.bindPopup(
       `<div style="color:#111;font-size:12px;line-height:1.5;">
         <strong style="display:inline-block;padding:2px 8px;background:${color};color:#111;border-radius:2px;margin-bottom:4px;">${swathTierLabel(poly.sizeTier)} hail zone</strong>
         <div>${poly.points.length} boundary pts</div>
       </div>`
-    ).addTo(layer);
+    );
+    polyLayer.addTo(layer);
     polygonCount++;
   }
 
@@ -1620,6 +1648,21 @@ function showHailLegend() {
 }
 function hideHailLegend() {
   document.getElementById('hailLegend')?.remove();
+}
+
+// Opacity slider helpers.
+function getSwathOpacity() {
+  const el = document.getElementById('mapSwathOpacity');
+  const pct = el ? parseInt(el.value, 10) : 35;
+  return pct / 100;
+}
+function showOpacityControl() {
+  const wrap = document.getElementById('mapSwathOpacityWrap');
+  if (wrap) wrap.style.display = 'flex';
+}
+function hideOpacityControl() {
+  const wrap = document.getElementById('mapSwathOpacityWrap');
+  if (wrap) wrap.style.display = 'none';
 }
 
 // Google polyline decoder — same algorithm as server-side, duplicated
