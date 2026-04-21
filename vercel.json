@@ -35,6 +35,9 @@
     },
     "api/admin/campaigns/[id]/push-to-ghl.js": {
       "maxDuration": 60
+    },
+    "api/admin/ghl-test.js": {
+      "maxDuration": 15
     }
   },
   "cleanUrls": true
