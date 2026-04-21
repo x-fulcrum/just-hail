@@ -1388,8 +1388,8 @@ function renderAllPolygonsMap(campaigns, retries = 0) {
   };
 
   toggle.addEventListener('change', () => {
-    if (toggle.checked) refetchSwaths();
-    else clearSwaths();
+    if (toggle.checked) { refetchSwaths(); showHailLegend(); }
+    else { clearSwaths(); hideHailLegend(); }
   });
   dateInput.addEventListener('change', () => {
     if (toggle.checked) { clearSwaths(); refetchSwaths(); }
@@ -1454,6 +1454,15 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
     const lng = s.Long ?? s.long ?? s.lng ?? s.lon ?? s.Lng;
     if (typeof lat === 'number' && typeof lng === 'number') {
       const radiusPx = sizeIn != null ? Math.max(4, Math.min(20, 4 + parseFloat(sizeIn) * 4)) : 5;
+      // Comments from IHM come with embedded <br> tags — strip them first, then
+      // escape, then inject our own line breaks. Also strip any "(click for details)"
+      // noise since we're already in a popup.
+      const commentLines = String(s.Comments || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .split(/[\r\n]+/)
+        .map((ln) => ln.trim())
+        .filter((ln) => ln && !/click for details/i.test(ln));
+      const bodyHtml = commentLines.map((ln) => escapeHtml(ln)).join('<br>');
       window.L.circleMarker([lat, lng], {
         radius: radiusPx,
         color,
@@ -1461,9 +1470,9 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
         fillColor: color,
         fillOpacity: 0.6,
       }).bindPopup(
-        `<div style="color:#111;font-size:12px;">
-          <strong>Hail ${sizeIn != null ? sizeIn + '"' : ''}</strong><br>
-          ${escapeHtml(String(s.Comments || '').split('\r\n').filter(Boolean).slice(0, 3).join('<br>'))}
+        `<div style="color:#111;font-size:12px;line-height:1.5;">
+          <strong style="display:inline-block;padding:2px 8px;background:${color};color:#111;border-radius:2px;margin-bottom:6px;">Hail ${sizeIn != null ? sizeIn + '"' : ''}</strong>
+          <div>${bodyHtml}</div>
         </div>`
       ).addTo(layer);
       rendered++;
@@ -1559,6 +1568,31 @@ function hailSizeColor(sizeIn) {
   if (s >= 1.0) return '#ffa500';
   if (s >= 0.5) return '#ffd700';
   return '#bababa';
+}
+
+// Floating legend shown while the hail overlay is on.
+const HAIL_SIZE_TIERS = [
+  { label: '2.5"+ (baseball)', color: '#8b00ff' },
+  { label: '2.0–2.5" (hen egg)', color: '#d92020' },
+  { label: '1.5–2.0" (ping pong)', color: '#ff6200' },
+  { label: '1.0–1.5" (quarter)', color: '#ffa500' },
+  { label: '0.5–1.0" (marble)', color: '#ffd700' },
+  { label: '< 0.5" (pea)',    color: '#bababa' },
+];
+function showHailLegend() {
+  const host = document.getElementById('mapViewMap');
+  if (!host || document.getElementById('hailLegend')) return;
+  const div = document.createElement('div');
+  div.id = 'hailLegend';
+  div.style.cssText = 'position:absolute;bottom:12px;right:12px;background:rgba(10,11,16,0.88);border:1px solid var(--hair-strong);border-radius:2px;padding:10px 12px;font-size:11px;color:var(--ink);z-index:400;min-width:160px;';
+  div.innerHTML = `
+    <div style="font-family:var(--font-mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px;">Hail size</div>
+    ${HAIL_SIZE_TIERS.map((t) => `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;"><span style="width:14px;height:14px;border-radius:50%;background:${t.color};display:inline-block;flex-shrink:0;"></span><span>${t.label}</span></div>`).join('')}
+  `;
+  host.appendChild(div);
+}
+function hideHailLegend() {
+  document.getElementById('hailLegend')?.remove();
 }
 
 // Google polyline decoder — same algorithm as server-side, duplicated
