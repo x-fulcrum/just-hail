@@ -692,51 +692,225 @@ async function deleteCampaign(id, name) {
   }
 }
 
-function showCampaignDrawer(campaign, leads) {
-  const drawerHost = document.getElementById('drawerHost');
-  const leadsHtml = leads.length
-    ? leads.map((l) => `
-        <tr>
-          <td>${l.first_name || ''} ${l.last_name || ''}</td>
-          <td class="mono" style="font-size: 11px;">${l.street || ''}<br><span class="dim">${[l.city, l.state, l.zip].filter(Boolean).join(', ')}</span></td>
-          <td class="mono" style="font-size: 11px;">${l.phone || '—'}</td>
-          <td class="mono" style="font-size: 11px;">${l.email || '—'}</td>
-          <td class="mono" style="font-size: 12px;">${l.estimated_home_value ? '$' + Number(l.estimated_home_value).toLocaleString() : '—'}</td>
-        </tr>
-      `).join('')
-    : '<tr><td colspan="5" class="empty" style="padding:40px;"><div class="big">No leads yet.</div><div>Run enrichment to populate.</div></td></tr>';
+let currentDrawerCampaign = null;
+let currentDrawerLeads = [];
 
+function showCampaignDrawer(campaign, leads) {
+  currentDrawerCampaign = campaign;
+  currentDrawerLeads = leads;
+
+  const drawerHost = document.getElementById('drawerHost');
   drawerHost.innerHTML = `
     <div class="drawer-backdrop" id="drawerBackdrop"></div>
-    <div class="drawer" style="width: 900px;">
-      <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair); display: flex; align-items: center; justify-content: space-between;">
+    <div class="drawer" style="width: 1100px; max-width: 100vw;">
+      <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair); display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;">
         <div>
           <div class="eyebrow">Campaign #${campaign.id}</div>
-          <h2 style="margin: 8px 0 0; font-family: var(--font-display); font-size: 24px; font-weight: 400;">${campaign.name}</h2>
+          <h2 style="margin: 8px 0 0; font-family: var(--font-display); font-size: 24px; font-weight: 400;">${escapeHtml(campaign.name)}</h2>
           <div class="mono dim" style="font-size: 11px; margin-top: 6px;">
-            ${campaign.target_type} · ${campStatusBadge(campaign.status)} · ${campaign.property_hits ?? '—'} properties · ${campaign.contact_hits ?? '—'} contacts
+            ${campaign.target_type} · ${campStatusBadge(campaign.status)} · ${leads.length} leads
           </div>
         </div>
-        <button class="btn btn-ghost" id="drawerCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
+          <button class="btn" id="draftSampleBtn" title="Generate drafts for the first 3 leads so you can see the quality before batching" style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Draft sample (3)</button>
+          <button class="btn btn-ghost" id="drawerCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
+        </div>
       </div>
-      <div style="padding: 20px 28px;">
-        <table>
-          <thead>
-            <tr>
-              <th>Owner</th>
-              <th style="width: 220px;">Address</th>
-              <th style="width: 130px;">Phone</th>
-              <th style="width: 180px;">Email</th>
-              <th style="width: 120px;">Est. value</th>
-            </tr>
-          </thead>
-          <tbody>${leadsHtml}</tbody>
-        </table>
-      </div>
+      <div id="drawerBody" style="padding: 20px 28px;"></div>
     </div>
   `;
   document.getElementById('drawerBackdrop').addEventListener('click', () => { drawerHost.innerHTML = ''; });
   document.getElementById('drawerCloseBtn').addEventListener('click', () => { drawerHost.innerHTML = ''; });
+  document.getElementById('draftSampleBtn').addEventListener('click', () => draftSample(campaign.id));
+
+  renderDrawerLeads();
+}
+
+function renderDrawerLeads() {
+  const leads = currentDrawerLeads;
+  const body = document.getElementById('drawerBody');
+  if (!body) return;
+
+  if (!leads.length) {
+    body.innerHTML = `<div class="empty" style="padding: 40px;"><div class="big">No leads yet.</div><div>Paste an IHM territory URL on the main page to populate this campaign.</div></div>`;
+    return;
+  }
+
+  body.innerHTML = leads.map(renderLeadCard).join('');
+
+  // Wire per-lead draft buttons
+  body.querySelectorAll('.lead-draft-btn').forEach((btn) => {
+    btn.addEventListener('click', () => draftOneLead(parseInt(btn.dataset.leadId, 10), btn));
+  });
+  body.querySelectorAll('.lead-approve-btn').forEach((btn) => {
+    btn.addEventListener('click', () => toggleApprove(parseInt(btn.dataset.draftId, 10), btn.dataset.approved === 'true', btn));
+  });
+  body.querySelectorAll('.lead-save-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => saveDraftEdit(parseInt(btn.dataset.draftId, 10), btn.dataset.channel, btn));
+  });
+}
+
+function renderLeadCard(l) {
+  const phone = l.mobile || l.phone || null;
+  const address = [l.street, [l.city, l.state].filter(Boolean).join(', '), l.zip].filter(Boolean).join(' · ');
+  const name = [l.first_name, l.last_name].filter(Boolean).join(' ') || '(no name)';
+  const smsDraft = l.drafts?.sms;
+  const emailDraft = l.drafts?.email;
+  const hasAnyDraft = smsDraft || emailDraft;
+
+  return `
+    <div class="card" style="padding: 16px 20px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; gap: 16px; align-items: flex-start;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 14px; font-weight: 500;">${escapeHtml(name)}</div>
+          <div class="mono dim" style="font-size: 11px; margin-top: 3px;">${escapeHtml(address || '—')}</div>
+          <div class="mono" style="font-size: 11px; margin-top: 4px;">
+            ${phone ? `<span style="color: var(--ink);">📱 ${escapeHtml(phone)}</span>` : ''}
+            ${l.email ? `<span style="color: var(--ink); margin-left: 12px;">✉ ${escapeHtml(l.email)}</span>` : ''}
+          </div>
+        </div>
+        <button class="btn btn-ghost lead-draft-btn" data-lead-id="${l.id}" style="font-size: 11px; padding: 6px 12px; white-space: nowrap;">
+          ${hasAnyDraft ? 'Re-draft' : 'Draft with Claude'}
+        </button>
+      </div>
+      ${hasAnyDraft ? `
+        <div style="margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          ${smsDraft ? renderDraftBlock(smsDraft, 'sms') : '<div></div>'}
+          ${emailDraft ? renderDraftBlock(emailDraft, 'email') : '<div></div>'}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderDraftBlock(draft, channel) {
+  const approved = !!draft.approved;
+  const sent = !!draft.sent_at;
+  return `
+    <div style="border: 1px solid ${approved ? 'var(--green)' : 'var(--hair-strong)'}; border-radius: 2px; padding: 10px 12px; background: var(--surface-2);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <div class="eyebrow" style="color: ${channel === 'sms' ? 'var(--accent)' : 'var(--green)'};">${channel === 'sms' ? '📱 SMS' : '✉ EMAIL'}${approved ? ' · APPROVED' : ''}${sent ? ' · SENT' : ''}</div>
+        <div style="display: flex; gap: 4px;">
+          <button class="lead-save-edit-btn" data-draft-id="${draft.id}" data-channel="${channel}" ${sent ? 'disabled' : ''} title="Save edits" style="font-size: 10px; padding: 3px 8px; background: transparent; color: var(--ink-dim); border: 1px solid var(--hair-strong); border-radius: 2px; cursor: ${sent ? 'not-allowed' : 'pointer'};">Save</button>
+          <button class="lead-approve-btn" data-draft-id="${draft.id}" data-approved="${approved}" ${sent ? 'disabled' : ''} style="font-size: 10px; padding: 3px 8px; background: ${approved ? 'var(--green)' : 'transparent'}; color: ${approved ? '#0a0b10' : 'var(--ink)'}; border: 1px solid ${approved ? 'var(--green)' : 'var(--hair-strong)'}; border-radius: 2px; cursor: ${sent ? 'not-allowed' : 'pointer'};">${approved ? '✓ Approved' : 'Approve'}</button>
+        </div>
+      </div>
+      ${channel === 'email' ? `
+        <input data-draft-id="${draft.id}" data-channel="email" data-field="subject" value="${escapeHtml(draft.subject || '')}" ${sent ? 'readonly' : ''} style="width: 100%; margin-bottom: 6px; padding: 6px 8px; font-size: 11px; font-family: var(--font-mono); background: var(--surface); border: 1px solid var(--hair); color: var(--ink);" />
+      ` : ''}
+      <textarea data-draft-id="${draft.id}" data-channel="${channel}" data-field="body" ${sent ? 'readonly' : ''} style="width: 100%; min-height: ${channel === 'sms' ? '70' : '140'}px; padding: 8px; font-size: 12px; font-family: var(--font-mono); background: var(--surface); border: 1px solid var(--hair); color: var(--ink); resize: vertical;">${escapeHtml(draft.body || '')}</textarea>
+    </div>
+  `;
+}
+
+async function draftOneLead(leadId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  try {
+    const res = await fetch(`/api/admin/leads/${leadId}/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Draft failed: ' + (data.error || res.status) + (data.details ? '\n' + data.details : ''));
+      return;
+    }
+    // Reload drawer data
+    const id = currentDrawerCampaign.id;
+    const refresh = await fetch(`/api/admin/campaigns/${id}`);
+    const fresh = await refresh.json();
+    currentDrawerLeads = fresh.leads;
+    renderDrawerLeads();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Re-draft';
+  }
+}
+
+async function draftSample(campaignId) {
+  const sampleBtn = document.getElementById('draftSampleBtn');
+  const sample = currentDrawerLeads.slice(0, 3);
+  if (sample.length === 0) return;
+  sampleBtn.disabled = true;
+  sampleBtn.innerHTML = '<span class="spin"></span> Drafting 3...';
+  try {
+    for (const lead of sample) {
+      await fetch(`/api/admin/leads/${lead.id}/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+    }
+    const refresh = await fetch(`/api/admin/campaigns/${campaignId}`);
+    const fresh = await refresh.json();
+    currentDrawerLeads = fresh.leads;
+    renderDrawerLeads();
+  } catch (err) {
+    alert('Bulk draft error: ' + err.message);
+  } finally {
+    sampleBtn.disabled = false;
+    sampleBtn.textContent = 'Draft sample (3)';
+  }
+}
+
+async function toggleApprove(draftId, currentlyApproved, btn) {
+  const next = !currentlyApproved;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/admin/drafts/${draftId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approved: next }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert('Approve failed: ' + (data.error || res.status));
+      return;
+    }
+    // Refresh drawer
+    const id = currentDrawerCampaign.id;
+    const refresh = await fetch(`/api/admin/campaigns/${id}`);
+    const fresh = await refresh.json();
+    currentDrawerLeads = fresh.leads;
+    renderDrawerLeads();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function saveDraftEdit(draftId, channel, btn) {
+  const body = document.querySelector(`textarea[data-draft-id="${draftId}"][data-channel="${channel}"]`)?.value || '';
+  const subject = channel === 'email'
+    ? document.querySelector(`input[data-draft-id="${draftId}"][data-channel="email"]`)?.value || ''
+    : null;
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    const payload = { body };
+    if (subject !== null) payload.subject = subject;
+    const res = await fetch(`/api/admin/drafts/${draftId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert('Save failed: ' + (data.error || res.status));
+      return;
+    }
+    btn.textContent = 'Saved ✓';
+    setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 1500);
+  } catch (err) {
+    alert('Error: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
 }
 
 // ---------- New campaign modal ----------

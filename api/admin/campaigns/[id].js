@@ -36,8 +36,26 @@ async function handleGet(req, res, campaignId) {
   if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
   if (lErr) return res.status(500).json({ error: lErr.message });
 
+  // Attach drafts for each lead (if any)
+  let drafts = [];
+  if ((leads || []).length) {
+    const leadIds = leads.map((l) => l.id);
+    const { data } = await supabase
+      .from('lead_outreach_drafts')
+      .select('id, lead_id, channel, subject, body, approved, sent_at, sent_status')
+      .in('lead_id', leadIds);
+    drafts = data || [];
+  }
+  // Group by lead_id
+  const draftsByLead = {};
+  for (const d of drafts) {
+    if (!draftsByLead[d.lead_id]) draftsByLead[d.lead_id] = {};
+    draftsByLead[d.lead_id][d.channel] = d;
+  }
+  const leadsWithDrafts = (leads || []).map((l) => ({ ...l, drafts: draftsByLead[l.id] || {} }));
+
   res.setHeader('Cache-Control', 'no-store');
-  return res.status(200).json({ campaign, leads: leads || [] });
+  return res.status(200).json({ campaign, leads: leadsWithDrafts });
 }
 
 async function handleDelete(req, res, campaignId) {

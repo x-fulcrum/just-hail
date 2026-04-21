@@ -20,6 +20,12 @@
     },
     "api/admin/campaigns/[id]/import-from-ihm.js": {
       "maxDuration": 60
+    },
+    "api/admin/leads/[id]/draft.js": {
+      "maxDuration": 60
+    },
+    "api/admin/drafts/[id].js": {
+      "maxDuration": 10
     }
   },
   "cleanUrls": true
