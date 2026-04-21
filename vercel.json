@@ -8,6 +8,15 @@
     },
     "api/admin/storms.js": {
       "maxDuration": 10
+    },
+    "api/admin/campaigns/index.js": {
+      "maxDuration": 10
+    },
+    "api/admin/campaigns/[id].js": {
+      "maxDuration": 10
+    },
+    "api/admin/campaigns/[id]/enrich.js": {
+      "maxDuration": 60
     }
   },
   "cleanUrls": true

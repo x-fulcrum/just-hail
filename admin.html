@@ -107,6 +107,44 @@
   <!-- Main -->
   <main style="padding: 40px 28px 80px; max-width: 1600px; margin: 0 auto;">
 
+    <!-- ================ STORM CAMPAIGNS ================ -->
+    <section id="camp" style="margin-bottom: 64px;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <div class="eyebrow" style="color: var(--accent);">· Storm Campaigns</div>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Virtual door knock</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Target a storm zone. BatchData enriches every property in the polygon with owner contact info. Preview → approve → launch outreach.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="btn btn-ghost" id="campRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
+          <button class="btn" id="campNewBtn" style="font-size: 13px; padding: 10px 18px;">+ New campaign</button>
+        </div>
+      </div>
+
+      <!-- Campaign list -->
+      <div class="card" style="padding: 0; overflow: hidden;">
+        <table id="campTable">
+          <thead>
+            <tr>
+              <th style="width: 110px;">Created</th>
+              <th>Name</th>
+              <th style="width: 90px;">Target</th>
+              <th style="width: 110px;">Status</th>
+              <th style="width: 90px; text-align: right;">Properties</th>
+              <th style="width: 90px; text-align: right;">Contacts</th>
+              <th style="width: 110px; text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="campBody">
+            <tr><td colspan="7" class="empty" style="padding: 40px;">
+              <div class="big">No campaigns yet.</div>
+              <div>Click "+ New campaign" to create one.</div>
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- ================ STORM COMMAND CENTER ================ -->
     <section id="cmd" style="margin-bottom: 64px;">
       <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
@@ -345,6 +383,271 @@ function startCmdPolling() {
 document.getElementById('cmdRefreshBtn').addEventListener('click', pollCmd);
 
 // =========================================================
+// STORM CAMPAIGNS — virtual door knock
+// =========================================================
+const campBodyEl    = document.getElementById('campBody');
+const campNewBtn    = document.getElementById('campNewBtn');
+const campRefreshBtn= document.getElementById('campRefreshBtn');
+
+function campStatusBadge(status) {
+  const m = {
+    draft:                { label: 'DRAFT',      color: 'var(--ink-dim)' },
+    enriching:            { label: 'ENRICHING',  color: 'var(--amber)' },
+    ready:                { label: 'READY',      color: 'var(--green)' },
+    outreach_queued:      { label: 'QUEUED',     color: 'var(--amber)' },
+    outreach_in_progress: { label: 'OUTREACH',   color: 'var(--accent)' },
+    done:                 { label: 'DONE',       color: 'var(--ink-dim)' },
+    canceled:             { label: 'CANCELED',   color: 'var(--ink-dim)' },
+  };
+  const c = m[status] || { label: (status||'').toUpperCase(), color: 'var(--ink-dim)' };
+  return `<span class="chip" style="color: ${c.color}; border-color: ${c.color};">${c.label}</span>`;
+}
+
+function targetLabel(c) {
+  if (c.target_type === 'zip')    return c.target_input.zip;
+  if (c.target_type === 'radius') return `${c.target_input.radius_miles}mi`;
+  if (c.target_type === 'polygon') return `${c.target_input.polygon.length} pts`;
+  return c.target_type;
+}
+
+async function renderCampaigns() {
+  try {
+    const res = await fetch('/api/admin/campaigns', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { campaigns } = await res.json();
+
+    if (!campaigns.length) {
+      campBodyEl.innerHTML = `
+        <tr><td colspan="7" class="empty" style="padding: 40px;">
+          <div class="big">No campaigns yet.</div>
+          <div>Click "+ New campaign" to create one.</div>
+        </td></tr>`;
+      return;
+    }
+
+    campBodyEl.innerHTML = campaigns.map((c) => {
+      const created = new Date(c.created_at).toLocaleDateString([], { month:'short', day:'numeric' });
+      const enrichBtn = (c.status === 'draft')
+        ? `<button class="btn btn-ghost camp-enrich" data-id="${c.id}" style="font-size:11px;padding:6px 10px;">Enrich</button>`
+        : (c.status === 'enriching')
+          ? `<span class="spin"></span>`
+          : `<button class="btn btn-ghost camp-open" data-id="${c.id}" style="font-size:11px;padding:6px 10px;">Open</button>`;
+      return `
+        <tr>
+          <td class="mono" style="font-size: 11px;">${created}</td>
+          <td><strong>${c.name}</strong>${c.storm_event_id ? `<br><span class="mono dim" style="font-size:10px;">storm #${c.storm_event_id}</span>` : ''}</td>
+          <td class="mono" style="font-size: 11px;">${c.target_type}<br><span class="dim">${targetLabel(c)}</span></td>
+          <td>${campStatusBadge(c.status)}</td>
+          <td class="mono" style="font-size: 12px; text-align: right;">${c.property_hits ?? '—'}</td>
+          <td class="mono" style="font-size: 12px; text-align: right;">${c.contact_hits ?? '—'}</td>
+          <td style="text-align: right;">${enrichBtn}</td>
+        </tr>
+      `;
+    }).join('');
+
+    // Wire enrichment buttons
+    campBodyEl.querySelectorAll('.camp-enrich').forEach((b) => {
+      b.addEventListener('click', () => enrichCampaign(b.dataset.id, b));
+    });
+    campBodyEl.querySelectorAll('.camp-open').forEach((b) => {
+      b.addEventListener('click', () => openCampaign(b.dataset.id));
+    });
+  } catch (err) {
+    console.error('renderCampaigns:', err);
+  }
+}
+
+async function enrichCampaign(id, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  try {
+    const res = await fetch(`/api/admin/campaigns/${id}/enrich`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ take: 50 }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      if (data.reason === 'insufficient_balance') {
+        alert('BatchData account has no balance. Add funds at app.batchdata.com to run real searches. In the meantime, you can create campaigns with mock enrichment by sending {"mock":true} from the API.');
+      } else {
+        alert('Enrichment failed: ' + (data.error || 'unknown'));
+      }
+    } else {
+      const modeTag = data.mock ? ' (MOCK)' : '';
+      alert(`Enrichment complete${modeTag}: ${data.properties_found} properties, ${data.contact_hits} with contacts.`);
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    renderCampaigns();
+  }
+}
+
+async function openCampaign(id) {
+  try {
+    const res = await fetch(`/api/admin/campaigns/${id}`);
+    const { campaign, leads } = await res.json();
+    showCampaignDrawer(campaign, leads);
+  } catch (err) {
+    alert('Could not load campaign: ' + err.message);
+  }
+}
+
+function showCampaignDrawer(campaign, leads) {
+  const drawerHost = document.getElementById('drawerHost');
+  const leadsHtml = leads.length
+    ? leads.map((l) => `
+        <tr>
+          <td>${l.first_name || ''} ${l.last_name || ''}</td>
+          <td class="mono" style="font-size: 11px;">${l.street || ''}<br><span class="dim">${[l.city, l.state, l.zip].filter(Boolean).join(', ')}</span></td>
+          <td class="mono" style="font-size: 11px;">${l.phone || '—'}</td>
+          <td class="mono" style="font-size: 11px;">${l.email || '—'}</td>
+          <td class="mono" style="font-size: 12px;">${l.estimated_home_value ? '$' + Number(l.estimated_home_value).toLocaleString() : '—'}</td>
+        </tr>
+      `).join('')
+    : '<tr><td colspan="5" class="empty" style="padding:40px;"><div class="big">No leads yet.</div><div>Run enrichment to populate.</div></td></tr>';
+
+  drawerHost.innerHTML = `
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <div class="drawer" style="width: 900px;">
+      <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair); display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <div class="eyebrow">Campaign #${campaign.id}</div>
+          <h2 style="margin: 8px 0 0; font-family: var(--font-display); font-size: 24px; font-weight: 400;">${campaign.name}</h2>
+          <div class="mono dim" style="font-size: 11px; margin-top: 6px;">
+            ${campaign.target_type} · ${campStatusBadge(campaign.status)} · ${campaign.property_hits ?? '—'} properties · ${campaign.contact_hits ?? '—'} contacts
+          </div>
+        </div>
+        <button class="btn btn-ghost" id="drawerCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
+      </div>
+      <div style="padding: 20px 28px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Owner</th>
+              <th style="width: 220px;">Address</th>
+              <th style="width: 130px;">Phone</th>
+              <th style="width: 180px;">Email</th>
+              <th style="width: 120px;">Est. value</th>
+            </tr>
+          </thead>
+          <tbody>${leadsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  document.getElementById('drawerBackdrop').addEventListener('click', () => { drawerHost.innerHTML = ''; });
+  document.getElementById('drawerCloseBtn').addEventListener('click', () => { drawerHost.innerHTML = ''; });
+}
+
+// ---------- New campaign modal ----------
+function showNewCampaignModal() {
+  const drawerHost = document.getElementById('drawerHost');
+  drawerHost.innerHTML = `
+    <div class="drawer-backdrop" id="newCampBackdrop"></div>
+    <div class="drawer" style="width: 520px;">
+      <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair); display: flex; align-items: center; justify-content: space-between;">
+        <h2 style="margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 400;">New campaign</h2>
+        <button class="btn btn-ghost" id="newCampCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
+      </div>
+      <form id="newCampForm" style="padding: 24px 28px; display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <label class="eyebrow" style="display: block; margin-bottom: 8px;">Name</label>
+          <input id="ncName" type="text" required placeholder="e.g. 2026-04-21 Leander hail, 1.5&quot;+" />
+        </div>
+
+        <div>
+          <label class="eyebrow" style="display: block; margin-bottom: 8px;">Target</label>
+          <select id="ncType" style="width: 100%;">
+            <option value="zip">ZIP code</option>
+            <option value="radius">Radius around a point</option>
+            <option value="polygon">Polygon (advanced — paste JSON)</option>
+          </select>
+        </div>
+
+        <div id="ncZipGroup">
+          <label class="eyebrow" style="display: block; margin-bottom: 8px;">ZIP code</label>
+          <input id="ncZip" type="text" maxlength="5" placeholder="78641" />
+        </div>
+
+        <div id="ncRadiusGroup" style="display: none;">
+          <label class="eyebrow" style="display: block; margin-bottom: 8px;">Center (lat, lng) and radius</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 110px; gap: 8px;">
+            <input id="ncLat" type="number" step="0.000001" placeholder="30.5788" />
+            <input id="ncLng" type="number" step="0.000001" placeholder="-97.8531" />
+            <input id="ncRadius" type="number" step="0.1" min="0.1" max="50" placeholder="Miles" />
+          </div>
+        </div>
+
+        <div id="ncPolyGroup" style="display: none;">
+          <label class="eyebrow" style="display: block; margin-bottom: 8px;">Polygon JSON — array of [lat, lng]</label>
+          <textarea id="ncPoly" rows="4" style="width: 100%; padding: 10px; background: var(--surface-2); border: 1px solid var(--hair-strong); color: var(--ink); font-family: var(--font-mono); font-size: 12px; border-radius: 2px;" placeholder='[[30.5,-97.9],[30.5,-97.8],[30.6,-97.8],[30.6,-97.9]]'></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+          <button type="button" class="btn btn-ghost" id="newCampCancel" style="font-size: 13px;">Cancel</button>
+          <button type="submit" class="btn" style="font-size: 13px;">Create</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const typeSel = document.getElementById('ncType');
+  const onTypeChange = () => {
+    document.getElementById('ncZipGroup').style.display    = typeSel.value === 'zip' ? 'block' : 'none';
+    document.getElementById('ncRadiusGroup').style.display = typeSel.value === 'radius' ? 'block' : 'none';
+    document.getElementById('ncPolyGroup').style.display   = typeSel.value === 'polygon' ? 'block' : 'none';
+  };
+  typeSel.addEventListener('change', onTypeChange);
+
+  const close = () => { drawerHost.innerHTML = ''; };
+  document.getElementById('newCampBackdrop').addEventListener('click', close);
+  document.getElementById('newCampCloseBtn').addEventListener('click', close);
+  document.getElementById('newCampCancel').addEventListener('click', close);
+
+  document.getElementById('newCampForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('ncName').value.trim();
+    const target_type = typeSel.value;
+    let target_input;
+    try {
+      if (target_type === 'zip') {
+        target_input = { zip: document.getElementById('ncZip').value.trim() };
+      } else if (target_type === 'radius') {
+        target_input = {
+          lat:    parseFloat(document.getElementById('ncLat').value),
+          lng:    parseFloat(document.getElementById('ncLng').value),
+          radius_miles: parseFloat(document.getElementById('ncRadius').value),
+        };
+      } else if (target_type === 'polygon') {
+        const poly = JSON.parse(document.getElementById('ncPoly').value);
+        target_input = { polygon: poly };
+      }
+    } catch (err) {
+      alert('Invalid input: ' + err.message);
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, target_type, target_input }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'create failed');
+      close();
+      renderCampaigns();
+    } catch (err) {
+      alert('Create failed: ' + err.message);
+    }
+  });
+}
+
+campNewBtn.addEventListener('click', showNewCampaignModal);
+campRefreshBtn.addEventListener('click', renderCampaigns);
+
+// =========================================================
 // AUTH GATE
 // =========================================================
 const gate = document.getElementById('gate');
@@ -358,6 +661,7 @@ function showApp() {
   app.style.display = 'block';
   init();
   startCmdPolling();
+  renderCampaigns();
 }
 function showGate() {
   gate.style.display = 'flex';

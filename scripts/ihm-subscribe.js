@@ -77,11 +77,11 @@ async function findTypeId(nameMatch) {
   // Discover doesn't specify shape of /WebhookTypes response; adapt defensively.
   const arr = Array.isArray(types) ? types : (types.types || types.data || []);
   const match = arr.find((t) => {
-    const n = (t.name || t.eventType || t.type || '').toLowerCase();
+    const n = (t.Name || t.name || t.eventType || t.type || '').toLowerCase();
     return n.includes(nameMatch.toLowerCase());
   });
   if (!match) throw new Error(`No webhook type matching "${nameMatch}" in: ${JSON.stringify(arr)}`);
-  return match.id ?? match.AgentWebhookType_id ?? match.type_id;
+  return match.AgentWebhookType_id ?? match.id ?? match.type_id;
 }
 
 async function subscribeOne({ typeId, category }) {
@@ -106,34 +106,34 @@ async function subscribeDefaults() {
 
   // Naïve match — refine once we see the actual response shape
   const hailAlertType = arr.find((t) => {
-    const n = (t.name || t.eventType || t.type || '').toLowerCase();
+    const n = (t.Name || t.name || t.eventType || t.type || '').toLowerCase();
     return n.includes('hail') && n.includes('alert');
   });
   const monitoringType = arr.find((t) => {
-    const n = (t.name || t.eventType || t.type || '').toLowerCase();
+    const n = (t.Name || t.name || t.eventType || t.type || '').toLowerCase();
     return n.includes('monitoring');
   });
   const markerStatusType = arr.find((t) => {
-    const n = (t.name || t.eventType || t.type || '').toLowerCase();
+    const n = (t.Name || t.name || t.eventType || t.type || '').toLowerCase();
     return (n.includes('marker') && n.includes('status')) || n.includes('status_changed');
   });
 
+  const hailAlertId    = hailAlertType?.AgentWebhookType_id ?? hailAlertType?.id;
+  const monitoringId   = monitoringType?.AgentWebhookType_id ?? monitoringType?.id;
+  const markerStatusId = markerStatusType?.AgentWebhookType_id ?? markerStatusType?.id;
+
   console.log(`\n→ Resolved:`);
-  console.log(`    hail_alert type id:        ${hailAlertType?.id ?? '(not found)'}`);
-  console.log(`    monitoring_alert type id:  ${monitoringType?.id ?? '(not found)'}`);
-  console.log(`    marker_status type id:     ${markerStatusType?.id ?? '(not found)'}`);
+  console.log(`    hail_alert type id:        ${hailAlertId    ?? '(not found)'}`);
+  console.log(`    monitoring_alert type id:  ${monitoringId   ?? '(not found)'}`);
+  console.log(`    marker_status type id:     ${markerStatusId ?? '(not found)'}`);
 
   console.log(`\n→ Subscribing webhooks to ${WEBHOOK_URL}`);
 
-  if (monitoringType?.id) {
-    await subscribeOne({ typeId: monitoringType.id });
-  }
-  if (markerStatusType?.id) {
-    await subscribeOne({ typeId: markerStatusType.id });
-  }
-  if (hailAlertType?.id) {
+  if (monitoringId)   await subscribeOne({ typeId: monitoringId });
+  if (markerStatusId) await subscribeOne({ typeId: markerStatusId });
+  if (hailAlertId) {
     for (const cat of DEFAULT_CATEGORIES) {
-      await subscribeOne({ typeId: hailAlertType.id, category: cat });
+      await subscribeOne({ typeId: hailAlertId, category: cat });
     }
   }
 
@@ -145,15 +145,16 @@ async function subscribeTest() {
   const types = await ihmGet('/AgentApi/WebhookTypes');
   const arr = Array.isArray(types) ? types : (types.types || types.data || []);
   const hailAlertType = arr.find((t) => {
-    const n = (t.name || t.eventType || t.type || '').toLowerCase();
+    const n = (t.Name || t.name || t.eventType || t.type || '').toLowerCase();
     return n.includes('hail') && n.includes('alert');
   });
-  if (!hailAlertType?.id) {
+  const hailAlertId = hailAlertType?.AgentWebhookType_id ?? hailAlertType?.id;
+  if (!hailAlertId) {
     console.error('Could not find hail_alert webhook type');
     console.error('Available types:', JSON.stringify(arr, null, 2));
     process.exit(1);
   }
-  await subscribeOne({ typeId: hailAlertType.id, category: 'TEST' });
+  await subscribeOne({ typeId: hailAlertId, category: 'TEST' });
   console.log('\n✓ Subscribed to TEST alerts. Trigger one from IHM to verify.');
 }
 
