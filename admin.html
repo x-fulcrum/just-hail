@@ -748,6 +748,32 @@ function renderDrawerLeads() {
   body.querySelectorAll('.lead-save-edit-btn').forEach((btn) => {
     btn.addEventListener('click', () => saveDraftEdit(parseInt(btn.dataset.draftId, 10), btn.dataset.channel, btn));
   });
+  body.querySelectorAll('.lead-send-email-btn').forEach((btn) => {
+    btn.addEventListener('click', () => sendEmailDraft(parseInt(btn.dataset.draftId, 10), btn));
+  });
+}
+
+async function sendEmailDraft(draftId, btn) {
+  if (!confirm('Send this email now? This is a REAL email to the lead — not a test.')) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  try {
+    const res = await fetch(`/api/admin/drafts/${draftId}/send-email`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      alert('Send failed: ' + (data.error || res.status) + (data.hint ? '\n\nHint: ' + data.hint : ''));
+    } else {
+      alert(`✓ Sent to ${data.to}\nResend ID: ${data.resend_id}`);
+    }
+    const refresh = await fetch(`/api/admin/campaigns/${currentDrawerCampaign.id}`);
+    const fresh = await refresh.json();
+    currentDrawerLeads = fresh.leads;
+    renderDrawerLeads();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function renderLeadCard(l) {
@@ -786,13 +812,15 @@ function renderLeadCard(l) {
 function renderDraftBlock(draft, channel) {
   const approved = !!draft.approved;
   const sent = !!draft.sent_at;
+  const canSendEmail = channel === 'email' && approved && !sent;
   return `
     <div style="border: 1px solid ${approved ? 'var(--green)' : 'var(--hair-strong)'}; border-radius: 2px; padding: 10px 12px; background: var(--surface-2);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;">
         <div class="eyebrow" style="color: ${channel === 'sms' ? 'var(--accent)' : 'var(--green)'};">${channel === 'sms' ? '📱 SMS' : '✉ EMAIL'}${approved ? ' · APPROVED' : ''}${sent ? ' · SENT' : ''}</div>
-        <div style="display: flex; gap: 4px;">
+        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
           <button class="lead-save-edit-btn" data-draft-id="${draft.id}" data-channel="${channel}" ${sent ? 'disabled' : ''} title="Save edits" style="font-size: 10px; padding: 3px 8px; background: transparent; color: var(--ink-dim); border: 1px solid var(--hair-strong); border-radius: 2px; cursor: ${sent ? 'not-allowed' : 'pointer'};">Save</button>
           <button class="lead-approve-btn" data-draft-id="${draft.id}" data-approved="${approved}" ${sent ? 'disabled' : ''} style="font-size: 10px; padding: 3px 8px; background: ${approved ? 'var(--green)' : 'transparent'}; color: ${approved ? '#0a0b10' : 'var(--ink)'}; border: 1px solid ${approved ? 'var(--green)' : 'var(--hair-strong)'}; border-radius: 2px; cursor: ${sent ? 'not-allowed' : 'pointer'};">${approved ? '✓ Approved' : 'Approve'}</button>
+          ${channel === 'email' ? `<button class="lead-send-email-btn" data-draft-id="${draft.id}" ${!canSendEmail ? 'disabled' : ''} title="${canSendEmail ? 'Send this email to the lead' : sent ? 'Already sent' : 'Approve first'}" style="font-size: 10px; padding: 3px 10px; background: ${canSendEmail ? 'var(--accent)' : 'transparent'}; color: ${canSendEmail ? '#0a0b10' : 'var(--ink-dim)'}; border: 1px solid ${canSendEmail ? 'var(--accent)' : 'var(--hair-strong)'}; border-radius: 2px; cursor: ${canSendEmail ? 'pointer' : 'not-allowed'}; font-weight: 500;">${sent ? 'Sent ✓' : 'Send →'}</button>` : ''}
         </div>
       </div>
       ${channel === 'email' ? `

@@ -26,6 +26,12 @@
     },
     "api/admin/drafts/[id].js": {
       "maxDuration": 10
+    },
+    "api/admin/drafts/[id]/send-email.js": {
+      "maxDuration": 30
+    },
+    "api/admin/test-email.js": {
+      "maxDuration": 15
     }
   },
   "cleanUrls": true
