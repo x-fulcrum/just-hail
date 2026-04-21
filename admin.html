@@ -1383,6 +1383,8 @@ function renderAllPolygonsMap(campaigns, retries = 0) {
   };
   const clearSwaths = () => {
     if (swathLayer) { map.removeLayer(swathLayer); swathLayer = null; }
+    const stat = document.querySelector('#mapStatsLine .swath-status');
+    if (stat) stat.remove();
   };
 
   toggle.addEventListener('change', () => {
@@ -1402,9 +1404,11 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
   if (!toggle.checked) return;
   const b = map.getBounds();
   const iso = dateInput.value;
-  if (!iso) return;
+  if (!iso) { swathStatus('Pick a date first.', 'warn'); return; }
   const [y, m, d] = iso.split('-');
   const date = `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+
+  swathStatus(`Loading swaths for ${date}…`, 'info');
 
   const url = `/api/admin/ihm-swaths?date=${encodeURIComponent(date)}&neLat=${b.getNorth()}&neLng=${b.getEast()}&swLat=${b.getSouth()}&swLng=${b.getWest()}`;
 
@@ -1412,37 +1416,39 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
   try {
     res = await fetch(url);
   } catch (err) {
-    console.warn('swath fetch failed:', err);
+    console.warn('[swaths] fetch failed:', err);
+    swathStatus(`Swath fetch failed: ${err.message}`, 'error');
     return;
   }
   const json = await res.json().catch(() => null);
   if (!json || !json.ok) {
-    console.warn('swath endpoint returned error:', json?.error);
+    console.warn('[swaths] endpoint error:', json);
+    const hint = json?.hint ? ` · ${json.hint}` : '';
+    swathStatus(`Swath endpoint error: ${json?.error || res.status}${hint}`, 'error');
     return;
   }
 
-  // IHM swath response shape isn't fully documented; handle both array and
-  // object-with-array forms defensively. Each item should have an encoded
-  // polyline (Google polyline format) in `p` and a size/level indicator.
-  const rawSwaths = Array.isArray(json.data)
-    ? json.data
-    : (json.data?.swaths || json.data?.data || json.data?.hail || []);
+  // Log raw shape once so we can adapt defensively.
+  console.info('[swaths] raw response shape:', {
+    keys: json.data && typeof json.data === 'object' ? Object.keys(json.data) : typeof json.data,
+    sample: Array.isArray(json.data) ? json.data[0] : json.data,
+  });
 
-  if (!Array.isArray(rawSwaths) || rawSwaths.length === 0) {
-    console.warn('no swaths in response for', date, json.data);
+  // IHM response varies — exhaustively hunt for the swath array.
+  const rawSwaths = extractSwathArray(json.data);
+
+  if (!rawSwaths.length) {
+    swathStatus(`No hail swaths on ${date} in this view. Try another date or zoom out.`, 'warn');
     return;
   }
 
   const layer = window.L.layerGroup();
+  let rendered = 0;
   for (const s of rawSwaths) {
-    // Try to extract coords — support both encoded polyline and raw array
-    let coords = null;
-    if (typeof s.p === 'string') coords = decodePolylineBrowser(s.p);
-    else if (Array.isArray(s.points)) coords = s.points.map((p) => [p.lat, p.lng]);
-    else if (Array.isArray(s.coords)) coords = s.coords;
+    const coords = extractSwathCoords(s);
     if (!coords || coords.length < 3) continue;
 
-    const sizeIn = s.size ?? s.sizeIn ?? s.hailSize ?? null;
+    const sizeIn = s.size ?? s.sizeIn ?? s.hailSize ?? s.Size ?? s.maxSize ?? null;
     const color = hailSizeColor(sizeIn);
 
     window.L.polygon(coords, {
@@ -1457,9 +1463,75 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
         Size: ${sizeIn != null ? sizeIn + '"' : 'unknown'}
       </div>`
     ).addTo(layer);
+    rendered++;
+  }
+
+  if (!rendered) {
+    swathStatus(`Got ${rawSwaths.length} swath records but couldn't decode their geometry. Check console for raw shape.`, 'warn');
+    return;
   }
   layer.addTo(map);
   setLayer(layer);
+  swathStatus(`Loaded ${rendered} hail swath${rendered === 1 ? '' : 's'} for ${date}.`, 'ok');
+}
+
+// Hunt through IHM's variably-shaped response to find the swath array.
+function extractSwathArray(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data !== 'object') return [];
+  // Common key names we've seen on IHM / similar endpoints
+  const keys = ['swaths', 'Swaths', 'data', 'Data', 'hail', 'Hail', 'features', 'Features', 'results', 'Results', 'StormData', 'stormData', 'points', 'Points', 'polygons', 'Polygons'];
+  for (const k of keys) {
+    if (Array.isArray(data[k])) return data[k];
+  }
+  // Last resort: find any top-level array in the object
+  for (const v of Object.values(data)) {
+    if (Array.isArray(v) && v.length) return v;
+  }
+  return [];
+}
+
+// Pull a [[lat,lng], ...] list out of one swath record (many possible shapes).
+function extractSwathCoords(s) {
+  if (!s) return null;
+  if (typeof s.p === 'string') return decodePolylineBrowser(s.p);
+  if (typeof s.P === 'string') return decodePolylineBrowser(s.P);
+  if (typeof s.polyline === 'string') return decodePolylineBrowser(s.polyline);
+  if (typeof s.Polyline === 'string') return decodePolylineBrowser(s.Polyline);
+  if (typeof s.geometry === 'string') return decodePolylineBrowser(s.geometry);
+  if (Array.isArray(s.points)) return s.points.map((p) => [p.lat ?? p.Lat, p.lng ?? p.Lng ?? p.lon]);
+  if (Array.isArray(s.Points)) return s.Points.map((p) => [p.lat ?? p.Lat, p.lng ?? p.Lng ?? p.lon]);
+  if (Array.isArray(s.coords)) return s.coords;
+  if (Array.isArray(s.coordinates)) return s.coordinates;
+  if (s.geometry?.coordinates && Array.isArray(s.geometry.coordinates)) {
+    // GeoJSON polygon: [[[lng, lat], ...]] — flip to [lat, lng]
+    const ring = s.geometry.coordinates[0] || s.geometry.coordinates;
+    if (Array.isArray(ring)) return ring.map((pt) => [pt[1], pt[0]]);
+  }
+  return null;
+}
+
+// Visible status line under the map header so failures are loud.
+function swathStatus(msg, level = 'info') {
+  const el = document.getElementById('mapStatsLine');
+  if (!el) return;
+  const color = level === 'error' ? 'var(--accent)'
+             : level === 'warn'  ? 'var(--amber)'
+             : level === 'ok'    ? 'var(--green)'
+             : 'var(--ink-dim)';
+  // Replace any previous swath-status span without touching the stats text.
+  let stat = el.querySelector('.swath-status');
+  if (!stat) {
+    stat = document.createElement('span');
+    stat.className = 'swath-status';
+    stat.style.marginLeft = '12px';
+    stat.style.paddingLeft = '12px';
+    stat.style.borderLeft = '1px solid var(--hair-strong)';
+    el.appendChild(stat);
+  }
+  stat.style.color = color;
+  stat.textContent = msg;
 }
 
 // Color hail swaths by size — yellow (small) → red → purple (>2.5")
@@ -1976,7 +2048,13 @@ function init() {
   const form      = document.getElementById('stratForm');
   const input     = document.getElementById('stratInput');
   const sendBtn   = document.getElementById('stratSend');
-  if (!toggle || !panel) return;
+  console.info('[Strategist] widget init', { toggleFound: !!toggle, panelFound: !!panel });
+  if (!toggle || !panel) {
+    console.warn('[Strategist] widget DOM not found — hard-refresh (Ctrl+Shift+R) to pick up latest admin.html');
+    return;
+  }
+  // Force toggle visible (defeat any lingering inline display:none from prior sessions).
+  toggle.style.display = 'flex';
 
   const OPEN_KEY = 'jh-strat-open';
   const HIST_KEY = 'jh-strat-history';
