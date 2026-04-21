@@ -1445,34 +1445,49 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
   const layer = window.L.layerGroup();
   let rendered = 0;
   for (const s of rawSwaths) {
-    const coords = extractSwathCoords(s);
-    if (!coords || coords.length < 3) continue;
-
     const sizeIn = s.size ?? s.sizeIn ?? s.hailSize ?? s.Size ?? s.maxSize ?? null;
     const color = hailSizeColor(sizeIn);
 
+    // IHM /Api/StormData returns individual hail-impact points, each with
+    // Lat/Long/Size — render those as size-scaled circle markers.
+    const lat = s.Lat ?? s.lat;
+    const lng = s.Long ?? s.long ?? s.lng ?? s.lon ?? s.Lng;
+    if (typeof lat === 'number' && typeof lng === 'number') {
+      const radiusPx = sizeIn != null ? Math.max(4, Math.min(20, 4 + parseFloat(sizeIn) * 4)) : 5;
+      window.L.circleMarker([lat, lng], {
+        radius: radiusPx,
+        color,
+        weight: 1.5,
+        fillColor: color,
+        fillOpacity: 0.6,
+      }).bindPopup(
+        `<div style="color:#111;font-size:12px;">
+          <strong>Hail ${sizeIn != null ? sizeIn + '"' : ''}</strong><br>
+          ${escapeHtml(String(s.Comments || '').split('\r\n').filter(Boolean).slice(0, 3).join('<br>'))}
+        </div>`
+      ).addTo(layer);
+      rendered++;
+      continue;
+    }
+
+    // Fallback: if the record carries an encoded polyline or coord list, draw a polygon.
+    const coords = extractSwathCoords(s);
+    if (!coords || coords.length < 3) continue;
     window.L.polygon(coords, {
-      color,
-      weight: 1,
-      fillColor: color,
-      fillOpacity: 0.28,
-      interactive: true,
+      color, weight: 1, fillColor: color, fillOpacity: 0.28,
     }).bindPopup(
-      `<div style="color:#111;font-size:12px;">
-        <strong>Hail swath</strong><br>
-        Size: ${sizeIn != null ? sizeIn + '"' : 'unknown'}
-      </div>`
+      `<div style="color:#111;font-size:12px;"><strong>Hail swath</strong><br>Size: ${sizeIn != null ? sizeIn + '"' : 'unknown'}</div>`
     ).addTo(layer);
     rendered++;
   }
 
   if (!rendered) {
-    swathStatus(`Got ${rawSwaths.length} swath records but couldn't decode their geometry. Check console for raw shape.`, 'warn');
+    swathStatus(`Got ${rawSwaths.length} records but couldn't decode any coords/pins. Check console.`, 'warn');
     return;
   }
   layer.addTo(map);
   setLayer(layer);
-  swathStatus(`Loaded ${rendered} hail swath${rendered === 1 ? '' : 's'} for ${date}.`, 'ok');
+  swathStatus(`${rendered} hail pin${rendered === 1 ? '' : 's'} on ${date}.`, 'ok');
 }
 
 // Hunt through IHM's variably-shaped response to find the swath array.
