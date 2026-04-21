@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Leaflet: satellite polygon preview in campaign drawer -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
   :root {
     --bg: #0a0b10;
@@ -700,6 +703,8 @@ function showCampaignDrawer(campaign, leads) {
   currentDrawerLeads = leads;
 
   const drawerHost = document.getElementById('drawerHost');
+  const hasPolygon = campaign.target_input?.polygon && Array.isArray(campaign.target_input.polygon) && campaign.target_input.polygon.length >= 3;
+
   drawerHost.innerHTML = `
     <div class="drawer-backdrop" id="drawerBackdrop"></div>
     <div class="drawer" style="width: 1100px; max-width: 100vw;">
@@ -713,17 +718,60 @@ function showCampaignDrawer(campaign, leads) {
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
           <button class="btn" id="draftSampleBtn" title="Generate drafts for the first 3 leads so you can see the quality before batching" style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Draft sample (3)</button>
+          <button class="btn btn-ghost" id="pushToGhlBtn" title="Push every lead in this campaign up to GHL as a contact with the jh-new-lead tag. Your GHL workflow picks it up from there." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Push to GHL →</button>
           <button class="btn btn-ghost" id="drawerCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
         </div>
       </div>
+      ${hasPolygon ? `<div id="drawerMap" style="height: 280px; border-bottom: 1px solid var(--hair); background: var(--surface-2);"></div>` : ''}
       <div id="drawerBody" style="padding: 20px 28px;"></div>
     </div>
   `;
   document.getElementById('drawerBackdrop').addEventListener('click', () => { drawerHost.innerHTML = ''; });
   document.getElementById('drawerCloseBtn').addEventListener('click', () => { drawerHost.innerHTML = ''; });
   document.getElementById('draftSampleBtn').addEventListener('click', () => draftSample(campaign.id));
+  document.getElementById('pushToGhlBtn').addEventListener('click', () => pushCampaignToGhl(campaign.id));
 
+  if (hasPolygon) renderDrawerMap(campaign.target_input.polygon);
   renderDrawerLeads();
+}
+
+// Render a Leaflet satellite map with the polygon overlay in the drawer.
+// Runs defensively — if Leaflet isn't loaded yet, retries briefly.
+function renderDrawerMap(polygon, retries = 0) {
+  if (typeof window.L === 'undefined') {
+    if (retries >= 40) return;        // give up after ~4s
+    return setTimeout(() => renderDrawerMap(polygon, retries + 1), 100);
+  }
+  const host = document.getElementById('drawerMap');
+  if (!host) return;
+  host.innerHTML = '';
+  const latlngs = polygon.map((p) => [p.lat, p.lng]);
+
+  const map = window.L.map(host, {
+    zoomControl: true,
+    attributionControl: false,
+    scrollWheelZoom: false,
+  });
+
+  // Esri World Imagery — free satellite tiles, no API key.
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+  }).addTo(map);
+
+  // Optional: thin reference labels overlay so you can see street names.
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    opacity: 0.6,
+  }).addTo(map);
+
+  const poly = window.L.polygon(latlngs, {
+    color: '#e94f37',
+    weight: 2.5,
+    fillColor: '#e94f37',
+    fillOpacity: 0.15,
+  }).addTo(map);
+
+  map.fitBounds(poly.getBounds(), { padding: [20, 20] });
 }
 
 function renderDrawerLeads() {
@@ -751,6 +799,52 @@ function renderDrawerLeads() {
   body.querySelectorAll('.lead-send-email-btn').forEach((btn) => {
     btn.addEventListener('click', () => sendEmailDraft(parseInt(btn.dataset.draftId, 10), btn));
   });
+}
+
+async function pushCampaignToGhl(campaignId) {
+  // Preview first
+  const preview = await fetch(`/api/admin/campaigns/${campaignId}/push-to-ghl`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dryRun: true }),
+  }).then((r) => r.json()).catch(() => null);
+  if (!preview?.ok) {
+    alert('Preview failed: ' + (preview?.error || 'unknown'));
+    return;
+  }
+  if (!preview.pushable) {
+    alert('No leads with email or phone — nothing to push to GHL.');
+    return;
+  }
+  const confirmed = confirm(
+    `Push ${preview.pushable} leads to GHL as contacts?\n\n` +
+    `Tags applied: just-hail, campaign-${campaignId}, jh-new-lead, src-ihm_territory.\n\n` +
+    `Your GHL workflow listening for "jh-new-lead" will take it from there.\n\n` +
+    `${preview.skipped > 0 ? '(' + preview.skipped + ' leads skipped — no email or phone.)' : ''}`
+  );
+  if (!confirmed) return;
+
+  const btn = document.getElementById('pushToGhlBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Pushing...';
+  try {
+    const res = await fetch(`/api/admin/campaigns/${campaignId}/push-to-ghl`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      alert('Push failed: ' + (data.error || res.status));
+    } else {
+      alert(`✓ Pushed ${data.pushed} / ${data.pushable} to GHL.\n${data.failed} failed, ${data.skipped} skipped.`);
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Push to GHL →';
+  }
 }
 
 async function sendEmailDraft(draftId, btn) {

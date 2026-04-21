@@ -32,6 +32,9 @@
     },
     "api/admin/test-email.js": {
       "maxDuration": 15
+    },
+    "api/admin/campaigns/[id]/push-to-ghl.js": {
+      "maxDuration": 60
     }
   },
   "cleanUrls": true

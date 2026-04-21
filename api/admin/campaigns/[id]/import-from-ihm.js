@@ -12,7 +12,7 @@
 // for forensic parser tuning.
 
 import { supabase } from '../../../../lib/supabase.js';
-import { getBulkContactListHtml, getTerritoryDetailsHtml, parseContactsFromHtml } from '../../../../lib/ihm-web.js';
+import { getBulkContactListHtml, getTerritoryDetailsHtml, parseContactsFromHtml, getTerritoryPolygon } from '../../../../lib/ihm-web.js';
 
 export const config = {
   api: { bodyParser: false },
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
   if (!territoryId) return res.status(400).json({ error: 'territory_id is required' });
 
   const { data: campaign } = await supabase
-    .from('campaigns').select('id').eq('id', campaignId).single();
+    .from('campaigns').select('id, target_input').eq('id', campaignId).single();
   if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
   // Try BulkContactList first (focused fragment). If empty, fall back
@@ -105,6 +105,22 @@ export default async function handler(req, res) {
     .select('id');
   if (error) return res.status(500).json({ error: error.message });
 
+  // Best-effort: fetch the polygon geometry so the UI can show a satellite preview.
+  // Failure here is non-fatal; campaign still functions without the shape.
+  let polygonInfo = null;
+  try {
+    polygonInfo = await getTerritoryPolygon(territoryId);
+  } catch (e) {
+    console.warn('[ihm-import] polygon fetch failed:', e.message);
+  }
+
+  const updatedTargetInput = {
+    ...(campaign.target_input || {}),
+    territory_id: territoryId,
+    polygon: polygonInfo?.polygon || null,
+    polygon_file_date: polygonInfo?.fileDate || null,
+  };
+
   await supabase
     .from('campaigns')
     .update({
@@ -112,6 +128,7 @@ export default async function handler(req, res) {
       property_hits: leadRows.length,
       contact_hits:  leadRows.filter((r) => r.phone || r.email || r.mobile).length,
       enrichment_finished_at: now,
+      target_input:  updatedTargetInput,
       metadata:      { ihm_territory_id: territoryId, imported_via: source },
     })
     .eq('id', campaignId);
