@@ -457,6 +457,7 @@ async function renderCampaigns() {
       const created = new Date(c.created_at).toLocaleDateString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
       const actions = `
         <button class="btn btn-ghost camp-open" data-id="${c.id}" style="font-size:11px;padding:6px 10px;">Open</button>
+        <button class="camp-delete" data-id="${c.id}" data-name="${escapeHtml(c.name)}" title="Delete campaign" style="font-size:11px;padding:6px 10px;margin-left:4px;background:transparent;color:var(--ink-dim);border:1px solid var(--hair-strong);border-radius:2px;cursor:pointer;" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)';" onmouseout="this.style.color='var(--ink-dim)';this.style.borderColor='var(--hair-strong)';">🗑</button>
       `;
       const territoryLink = (c.target_type === 'ihm_territory' && c.target_input?.territory_id)
         ? `<a href="https://maps.interactivehailmaps.com/Territory/Details/${c.target_input.territory_id}?idr=true" target="_blank" rel="noopener" class="mono" style="font-size: 10px; color: var(--ink-dim); text-decoration: underline dotted;">${targetLabel(c)}</a>`
@@ -469,7 +470,7 @@ async function renderCampaigns() {
           <td>${campStatusBadge(c.status)}</td>
           <td class="mono" style="font-size: 12px; text-align: right;">${c.property_hits ?? '—'}</td>
           <td class="mono" style="font-size: 12px; text-align: right;">${c.contact_hits ?? '—'}</td>
-          <td style="text-align: right;">${actions}</td>
+          <td style="text-align: right; white-space: nowrap;">${actions}</td>
         </tr>
       `;
     }).join('');
@@ -477,6 +478,9 @@ async function renderCampaigns() {
     // Wire action buttons
     campBodyEl.querySelectorAll('.camp-open').forEach((b) => {
       b.addEventListener('click', () => openCampaign(b.dataset.id));
+    });
+    campBodyEl.querySelectorAll('.camp-delete').forEach((b) => {
+      b.addEventListener('click', () => deleteCampaign(b.dataset.id, b.dataset.name));
     });
   } catch (err) {
     console.error('renderCampaigns:', err);
@@ -656,6 +660,35 @@ async function openCampaign(id) {
     showCampaignDrawer(campaign, leads);
   } catch (err) {
     alert('Could not load campaign: ' + err.message);
+  }
+}
+
+async function deleteCampaign(id, name) {
+  const code = prompt(`Delete campaign "${name}" and all of its leads?\n\nThis cannot be undone.\n\nEnter confirm code:`);
+  if (code === null) return; // user cancelled
+  if (code !== '1234') {
+    alert('Wrong code. Campaign not deleted.');
+    return;
+  }
+  try {
+    const res = await fetch(`/api/admin/campaigns/${id}`, {
+      method: 'DELETE',
+      headers: { 'X-Admin-Confirm': code },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Delete failed: ' + (data.error || res.status));
+      return;
+    }
+    // Quick flash
+    const statusEl = document.getElementById('ihmImportStatus');
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color: var(--green);">✓ Deleted "${escapeHtml(name)}" (${data.leads_deleted} leads)</span>`;
+      setTimeout(() => { if (statusEl.textContent.startsWith('✓ Deleted')) statusEl.innerHTML = ''; }, 4000);
+    }
+    renderCampaigns();
+  } catch (err) {
+    alert('Error: ' + err.message);
   }
 }
 
