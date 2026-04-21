@@ -106,6 +106,70 @@
 
   <!-- Main -->
   <main style="padding: 40px 28px 80px; max-width: 1600px; margin: 0 auto;">
+
+    <!-- ================ STORM COMMAND CENTER ================ -->
+    <section id="cmd" style="margin-bottom: 64px;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <div class="eyebrow" style="color: var(--accent);">· Storm Command Center</div>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Live storm feed</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Real-time hail events from Interactive Hail Maps. Pins, alerts, and status changes land here the moment IHM fires a webhook.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <span id="cmdStatus" class="mono dim" style="font-size: 11px; letter-spacing: 0.08em;">Connecting…</span>
+          <button class="btn btn-ghost" id="cmdRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Event-type counts -->
+      <div id="cmdCounts" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="cmdCount-hail_alert">0</div>
+          <div class="stat-lbl">Hail alerts</div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="cmdCount-monitoring_alert">0</div>
+          <div class="stat-lbl">Monitoring hits</div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="cmdCount-marker_status_changed">0</div>
+          <div class="stat-lbl">Pin status changes</div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="cmdCountTotal">0</div>
+          <div class="stat-lbl">Total events (last 50)</div>
+        </div>
+      </div>
+
+      <!-- Event feed -->
+      <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="max-height: 420px; overflow-y: auto;">
+          <table id="cmdTable">
+            <thead>
+              <tr>
+                <th style="width: 140px;">Received</th>
+                <th style="width: 160px;">Event</th>
+                <th>Detail</th>
+                <th style="width: 180px;">Address</th>
+                <th style="width: 110px;">Size / Status</th>
+              </tr>
+            </thead>
+            <tbody id="cmdBody">
+              <tr><td colspan="5" class="empty" style="padding: 40px;">
+                <div class="big">No storm events yet.</div>
+                <div>Once IHM webhook subscriptions are live, events appear here in real time.</div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div class="mono dim" style="font-size: 11px;">Showing <span id="cmdShown">0</span> events · Polls /api/admin/storms every 15s</div>
+        <div class="mono dim" style="font-size: 11px;">Updated <span id="cmdLastSync">never</span></div>
+      </div>
+    </section>
+
     <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 40px; gap: 24px; flex-wrap: wrap;">
       <div>
         <div class="eyebrow">· Lead intake</div>
@@ -181,6 +245,104 @@
 const ENDPOINT = 'https://script.google.com/macros/s/AKfycbzi_4_ZaBRafJ5bZpxavtNF7fzS84bJHHicANZQZiybTZpwaStqK72Qc1KGTAKzmkf4vQ/exec';
 const ADMIN_KEY = 'jh-leander-2026';
 const SESSION_KEY = 'jh-admin-auth';
+const CMD_POLL_MS = 15000;
+
+// =========================================================
+// STORM COMMAND CENTER — polls /api/admin/storms every 15s
+// =========================================================
+const cmdStatusEl = document.getElementById('cmdStatus');
+const cmdBodyEl   = document.getElementById('cmdBody');
+const cmdShownEl  = document.getElementById('cmdShown');
+const cmdSyncEl   = document.getElementById('cmdLastSync');
+const cmdCountTotalEl = document.getElementById('cmdCountTotal');
+let cmdPollTimer = null;
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1)    return 'just now';
+  if (diffMin < 60)   return diffMin + 'm ago';
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24)    return diffHr + 'h ago';
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function eventBadge(type) {
+  const m = {
+    hail_alert:             { label: 'HAIL ALERT',       color: 'var(--accent)' },
+    monitoring_alert:       { label: 'MONITORING HIT',   color: 'var(--green)' },
+    marker_status_changed:  { label: 'PIN UPDATE',       color: 'var(--amber)' },
+  };
+  const c = m[type] || { label: type.toUpperCase(), color: 'var(--ink-dim)' };
+  return `<span class="chip" style="color: ${c.color}; border-color: ${c.color};">${c.label}</span>`;
+}
+
+function renderCmdRow(ev) {
+  const addr = [ev.street, ev.city, ev.state, ev.zip].filter(Boolean).join(', ');
+  const sizeOrStatus = ev.swath_size_in
+    ? `${ev.swath_size_in}"`
+    : (ev.marker_status || ev.alert_category || '—');
+  const detail =
+    ev.event_type === 'hail_alert'            ? (ev.alert_category || 'general')
+    : ev.event_type === 'monitoring_alert'    ? `Size ${ev.swath_size_in || '?'}" · level ${ev.level_detected ?? '?'}`
+    : ev.event_type === 'marker_status_changed' ? `${ev.status_source || ''} → ${ev.marker_status || '?'}`
+    : '—';
+  const customer = ev.customer_name ? `<div class="mono dim" style="font-size: 10px; margin-top: 3px;">${ev.customer_name}</div>` : '';
+  return `
+    <tr>
+      <td class="mono" style="font-size: 12px;">${fmtTime(ev.received_at)}</td>
+      <td>${eventBadge(ev.event_type)}</td>
+      <td><div>${detail}</div>${customer}</td>
+      <td class="mono" style="font-size: 11px; color: var(--ink-dim);">${addr || '—'}</td>
+      <td class="mono" style="font-size: 12px;">${sizeOrStatus}</td>
+    </tr>
+  `;
+}
+
+async function pollCmd() {
+  try {
+    const res = await fetch('/api/admin/storms?limit=50', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const events = data.events || [];
+    const counts = data.counts || {};
+
+    // Update count tiles
+    document.getElementById('cmdCount-hail_alert').textContent            = counts.hail_alert            || 0;
+    document.getElementById('cmdCount-monitoring_alert').textContent      = counts.monitoring_alert      || 0;
+    document.getElementById('cmdCount-marker_status_changed').textContent = counts.marker_status_changed || 0;
+    cmdCountTotalEl.textContent = events.length;
+
+    // Render table
+    if (events.length === 0) {
+      cmdBodyEl.innerHTML = `
+        <tr><td colspan="5" class="empty" style="padding: 40px;">
+          <div class="big">No storm events yet.</div>
+          <div>Once IHM webhook subscriptions are live, events appear here in real time.</div>
+        </td></tr>`;
+    } else {
+      cmdBodyEl.innerHTML = events.map(renderCmdRow).join('');
+    }
+
+    cmdShownEl.textContent = events.length;
+    cmdSyncEl.textContent  = new Date().toLocaleTimeString();
+    cmdStatusEl.textContent = 'Live';
+    cmdStatusEl.style.color = 'var(--green)';
+  } catch (err) {
+    cmdStatusEl.textContent = 'Offline — ' + (err.message || 'error');
+    cmdStatusEl.style.color = 'var(--accent)';
+  }
+}
+
+function startCmdPolling() {
+  pollCmd();
+  clearInterval(cmdPollTimer);
+  cmdPollTimer = setInterval(pollCmd, CMD_POLL_MS);
+}
+document.getElementById('cmdRefreshBtn').addEventListener('click', pollCmd);
 
 // =========================================================
 // AUTH GATE
@@ -195,6 +357,7 @@ function showApp() {
   gate.style.display = 'none';
   app.style.display = 'block';
   init();
+  startCmdPolling();
 }
 function showGate() {
   gate.style.display = 'flex';

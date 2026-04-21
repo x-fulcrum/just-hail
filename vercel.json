@@ -2,7 +2,14 @@
   "functions": {
     "api/claude.js": {
       "maxDuration": 30
+    },
+    "api/ihm-webhook.js": {
+      "maxDuration": 15
+    },
+    "api/admin/storms.js": {
+      "maxDuration": 10
     }
   },
   "cleanUrls": true
 }
+
