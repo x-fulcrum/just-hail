@@ -458,30 +458,106 @@ async function renderCampaigns() {
 }
 
 async function enrichCampaign(id, btn) {
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span>';
+  // Step 1: preview (no BatchData call, free)
+  let preview;
   try {
     const res = await fetch(`/api/admin/campaigns/${id}/enrich`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ take: 50 }),
+      body: JSON.stringify({ dryRun: true, take: 3, skipTrace: true }),
     });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      if (data.reason === 'insufficient_balance') {
-        alert('BatchData account has no balance. Add funds at app.batchdata.com to run real searches. In the meantime, you can create campaigns with mock enrichment by sending {"mock":true} from the API.');
-      } else {
-        alert('Enrichment failed: ' + (data.error || 'unknown'));
-      }
-    } else {
-      const modeTag = data.mock ? ' (MOCK)' : '';
-      alert(`Enrichment complete${modeTag}: ${data.properties_found} properties, ${data.contact_hits} with contacts.`);
-    }
+    preview = await res.json();
   } catch (err) {
-    alert('Error: ' + err.message);
-  } finally {
-    renderCampaigns();
+    alert('Preview failed: ' + err.message);
+    return;
   }
+
+  // Step 2: modal with three options
+  showEnrichConfirm(id, preview, btn);
+}
+
+function showEnrichConfirm(id, preview, btn) {
+  const drawerHost = document.getElementById('drawerHost');
+  drawerHost.innerHTML = `
+    <div class="drawer-backdrop" id="enrichBackdrop"></div>
+    <div class="drawer" style="width: 480px;">
+      <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair);">
+        <h2 style="margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400;">Enrich campaign #${id}</h2>
+        <p class="dim" style="margin: 10px 0 0; font-size: 13px;">BatchData calls cost real money. Start small, see the data shape, then scale up.</p>
+      </div>
+      <div style="padding: 24px 28px; display: flex; flex-direction: column; gap: 14px;">
+        <div class="card" style="padding: 16px;">
+          <div class="eyebrow">Cost estimate (pessimistic)</div>
+          <div style="font-family: var(--font-display); font-size: 28px; margin-top: 6px;">$${(preview.estimated_usd_max || 0).toFixed(2)}</div>
+          <div class="mono dim" style="font-size: 11px; margin-top: 4px;">for ${preview.take} records, search + skip-trace. Actual may be lower depending on your BD plan.</div>
+        </div>
+
+        <div>
+          <label class="eyebrow" style="display: block; margin-bottom: 8px;">How many records?</label>
+          <input id="enTake" type="number" min="1" max="25" value="3" style="width: 100%;" />
+          <div class="mono dim" style="font-size: 10px; margin-top: 4px;">Hard cap 25 per enrichment during dev.</div>
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input id="enSkipTrace" type="checkbox" checked style="width: auto; height: auto;" />
+          <span style="font-size: 13px;">Run skip-trace too (adds phone + email, doubles cost)</span>
+        </label>
+
+        <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <button class="btn btn-ghost" id="enMock">Mock (free)</button>
+          <button class="btn" id="enLive" style="background: var(--accent);">Run live →</button>
+        </div>
+        <button class="btn btn-ghost" id="enCancel" style="font-size: 12px; padding: 8px;">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  const close = () => { drawerHost.innerHTML = ''; };
+  document.getElementById('enrichBackdrop').addEventListener('click', close);
+  document.getElementById('enCancel').addEventListener('click', close);
+
+  async function run(body) {
+    close();
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>';
+    try {
+      const res = await fetch(`/api/admin/campaigns/${id}/enrich`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        if (data.reason === 'insufficient_balance') {
+          alert('BatchData account has no balance. Add funds or run in Mock mode.');
+        } else if (data.error === 'confirmCost required') {
+          alert('Would cost up to $' + data.estimated_usd_max.toFixed(2) + '. Over 5 records needs explicit confirm (checkbox not wired yet — rerun from modal).');
+        } else {
+          alert('Enrichment failed: ' + (data.error || 'unknown'));
+        }
+      } else {
+        const tag = data.mock ? '(MOCK)' : '(LIVE)';
+        alert(`Enrichment ${tag} — ${data.properties_found} properties, ${data.contact_hits} contacts. Click Open to see them.`);
+      }
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      renderCampaigns();
+    }
+  }
+
+  document.getElementById('enMock').addEventListener('click', () => {
+    const take = Math.min(parseInt(document.getElementById('enTake').value, 10) || 3, 25);
+    const skipTrace = document.getElementById('enSkipTrace').checked;
+    run({ mock: true, take, skipTrace });
+  });
+  document.getElementById('enLive').addEventListener('click', () => {
+    const take = Math.min(parseInt(document.getElementById('enTake').value, 10) || 3, 25);
+    const skipTrace = document.getElementById('enSkipTrace').checked;
+    const body = { take, skipTrace };
+    if (take > 5) body.confirmCost = true;
+    run(body);
+  });
 }
 
 async function openCampaign(id) {

@@ -43,10 +43,44 @@ export default async function handler(req, res) {
     return res.status(409).json({ error: 'Already enriching — wait for it to finish' });
   }
 
-  // Optional caller override: { mock: true } to exercise the pipe without spending credit
+  // Caller options:
+  //   { mock: true }        — use mock data, no BatchData call
+  //   { dryRun: true }      — return estimated cost only, do not hit BatchData
+  //   { take: N }           — record count; default 3, hard cap 25 during dev
+  //   { skipTrace: false }  — skip the skip-trace step (search only)
+  //   { confirmCost: true } — required when live + take > 5, acknowledges spend
   const body = await readJson(req);
   const forceMock = body?.mock === true;
-  const take = Math.min(parseInt(body?.take, 10) || 50, 200);
+  const dryRun    = body?.dryRun === true;
+  const take      = Math.min(parseInt(body?.take, 10) || 3, 25);
+  const doSkipTrace = body?.skipTrace !== false;
+  const confirmCost = body?.confirmCost === true;
+
+  // Cost guardrail: require explicit confirm for live enrichment > 5 records
+  // Assumed per-record cost (pessimistic): $0.60 search + $0.60 skip-trace = $1.20
+  const COST_SEARCH  = 0.60;
+  const COST_SKIP    = 0.60;
+  const estimatedUsd = (take * COST_SEARCH) + (doSkipTrace ? take * COST_SKIP : 0);
+
+  if (dryRun) {
+    return res.status(200).json({
+      ok: true,
+      dryRun: true,
+      take,
+      skipTrace: doSkipTrace,
+      estimated_usd_max: estimatedUsd,
+      note: 'This is an upper-bound estimate. Actual per-record cost depends on your BatchData plan. Live run will return actual cost.',
+    });
+  }
+
+  if (!forceMock && take > 5 && !confirmCost) {
+    return res.status(400).json({
+      ok: false,
+      error: 'confirmCost required',
+      estimated_usd_max: estimatedUsd,
+      note: 'Live enrichments over 5 records require {"confirmCost": true} in the request body to prevent accidental spend.',
+    });
+  }
 
   // Mark enriching
   await supabase
@@ -97,9 +131,9 @@ export default async function handler(req, res) {
       insertedLeads = data || [];
     }
 
-    // 3) Skip-trace for phone/email
+    // 3) Skip-trace for phone/email (optional)
     let contactHits = 0;
-    if (insertedLeads.length) {
+    if (doSkipTrace && insertedLeads.length) {
       const requests = insertedLeads.map((l) => ({
         propertyAddress: {
           street: l.street,
