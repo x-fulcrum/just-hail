@@ -1428,75 +1428,101 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
     return;
   }
 
-  // Log raw shape once so we can adapt defensively.
-  console.info('[swaths] raw response shape:', {
-    keys: json.data && typeof json.data === 'object' ? Object.keys(json.data) : typeof json.data,
-    sample: Array.isArray(json.data) ? json.data[0] : json.data,
-  });
+  // Response shape: { ok, pins: [...], polygons: [...], data: pins (back-compat) }
+  const pins     = Array.isArray(json.pins)     ? json.pins     : extractSwathArray(json.data);
+  const polygons = Array.isArray(json.polygons) ? json.polygons : [];
 
-  // IHM response varies — exhaustively hunt for the swath array.
-  const rawSwaths = extractSwathArray(json.data);
-
-  if (!rawSwaths.length) {
-    swathStatus(`No hail swaths on ${date} in this view. Try another date or zoom out.`, 'warn');
+  if (!pins.length && !polygons.length) {
+    swathStatus(`No hail on ${date}. Try another date.`, 'warn');
     return;
   }
 
   const layer = window.L.layerGroup();
-  let rendered = 0;
-  for (const s of rawSwaths) {
-    const sizeIn = s.size ?? s.sizeIn ?? s.hailSize ?? s.Size ?? s.maxSize ?? null;
-    const color = hailSizeColor(sizeIn);
+  let polygonCount = 0;
+  let pinCount = 0;
 
-    // IHM /Api/StormData returns individual hail-impact points, each with
-    // Lat/Long/Size — render those as size-scaled circle markers.
-    const lat = s.Lat ?? s.lat;
-    const lng = s.Long ?? s.long ?? s.lng ?? s.lon ?? s.Lng;
-    if (typeof lat === 'number' && typeof lng === 'number') {
-      const radiusPx = sizeIn != null ? Math.max(4, Math.min(20, 4 + parseFloat(sizeIn) * 4)) : 5;
-      // Comments from IHM come with embedded <br> tags — strip them first, then
-      // escape, then inject our own line breaks. Also strip any "(click for details)"
-      // noise since we're already in a popup.
-      const commentLines = String(s.Comments || '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .split(/[\r\n]+/)
-        .map((ln) => ln.trim())
-        .filter((ln) => ln && !/click for details/i.test(ln));
-      const bodyHtml = commentLines.map((ln) => escapeHtml(ln)).join('<br>');
-      window.L.circleMarker([lat, lng], {
-        radius: radiusPx,
-        color,
-        weight: 1.5,
-        fillColor: color,
-        fillOpacity: 0.6,
-      }).bindPopup(
-        `<div style="color:#111;font-size:12px;line-height:1.5;">
-          <strong style="display:inline-block;padding:2px 8px;background:${color};color:#111;border-radius:2px;margin-bottom:6px;">Hail ${sizeIn != null ? sizeIn + '"' : ''}</strong>
-          <div>${bodyHtml}</div>
-        </div>`
-      ).addTo(layer);
-      rendered++;
-      continue;
-    }
-
-    // Fallback: if the record carries an encoded polyline or coord list, draw a polygon.
-    const coords = extractSwathCoords(s);
-    if (!coords || coords.length < 3) continue;
-    window.L.polygon(coords, {
-      color, weight: 1, fillColor: color, fillOpacity: 0.28,
+  // --- Render swath polygons FIRST so pins stack on top ---
+  for (const poly of polygons) {
+    const latlngs = (poly.points || []).map((p) => [p.lat, p.lng]);
+    if (latlngs.length < 3) continue;
+    const color = swathTierColor(poly.sizeTier);
+    window.L.polygon(latlngs, {
+      color,
+      weight: 1.2,
+      fillColor: color,
+      fillOpacity: 0.35,
+      interactive: true,
     }).bindPopup(
-      `<div style="color:#111;font-size:12px;"><strong>Hail swath</strong><br>Size: ${sizeIn != null ? sizeIn + '"' : 'unknown'}</div>`
+      `<div style="color:#111;font-size:12px;line-height:1.5;">
+        <strong style="display:inline-block;padding:2px 8px;background:${color};color:#111;border-radius:2px;margin-bottom:4px;">${swathTierLabel(poly.sizeTier)} hail zone</strong>
+        <div>${poly.points.length} boundary pts</div>
+      </div>`
     ).addTo(layer);
-    rendered++;
+    polygonCount++;
   }
 
-  if (!rendered) {
-    swathStatus(`Got ${rawSwaths.length} records but couldn't decode any coords/pins. Check console.`, 'warn');
+  // --- Render individual hail-impact pins on top ---
+  for (const s of pins) {
+    const sizeIn = s.size ?? s.sizeIn ?? s.hailSize ?? s.Size ?? s.maxSize ?? null;
+    const color = hailSizeColor(sizeIn);
+    const lat = s.Lat ?? s.lat;
+    const lng = s.Long ?? s.long ?? s.lng ?? s.lon ?? s.Lng;
+    if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+    const radiusPx = sizeIn != null ? Math.max(4, Math.min(20, 4 + parseFloat(sizeIn) * 4)) : 5;
+    const commentLines = String(s.Comments || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .split(/[\r\n]+/)
+      .map((ln) => ln.trim())
+      .filter((ln) => ln && !/click for details/i.test(ln));
+    const bodyHtml = commentLines.map((ln) => escapeHtml(ln)).join('<br>');
+    window.L.circleMarker([lat, lng], {
+      radius: radiusPx,
+      color,
+      weight: 1.5,
+      fillColor: color,
+      fillOpacity: 0.75,
+    }).bindPopup(
+      `<div style="color:#111;font-size:12px;line-height:1.5;">
+        <strong style="display:inline-block;padding:2px 8px;background:${color};color:#111;border-radius:2px;margin-bottom:6px;">Hail ${sizeIn != null ? sizeIn + '"' : ''}</strong>
+        <div>${bodyHtml}</div>
+      </div>`
+    ).addTo(layer);
+    pinCount++;
+  }
+
+  if (!polygonCount && !pinCount) {
+    swathStatus(`Got data but couldn't render anything. Check console.`, 'warn');
     return;
   }
   layer.addTo(map);
   setLayer(layer);
-  swathStatus(`${rendered} hail pin${rendered === 1 ? '' : 's'} on ${date}.`, 'ok');
+  const parts = [];
+  if (polygonCount) parts.push(`${polygonCount} swath zone${polygonCount === 1 ? '' : 's'}`);
+  if (pinCount)     parts.push(`${pinCount} pin${pinCount === 1 ? '' : 's'}`);
+  swathStatus(`${parts.join(' + ')} on ${date}.`, 'ok');
+}
+
+// Color for a SwathDataFl polygon by its size tier (IHM's `s` field).
+// Tiers are integer buckets 1..N matching their internal size thresholds.
+function swathTierColor(tier) {
+  switch (Number(tier)) {
+    case 1: return '#ffd700';  // small — gold
+    case 2: return '#ffa500';  // orange
+    case 3: return '#ff6200';  // deep orange
+    case 4: return '#d92020';  // red
+    case 5: return '#8b00ff';  // purple
+    default: return '#888';
+  }
+}
+function swathTierLabel(tier) {
+  switch (Number(tier)) {
+    case 1: return '0.75–1"';
+    case 2: return '1–1.5"';
+    case 3: return '1.5–2"';
+    case 4: return '2–2.5"';
+    case 5: return '2.5"+';
+    default: return `Tier ${tier ?? '?'}`;
+  }
 }
 
 // Hunt through IHM's variably-shaped response to find the swath array.
@@ -1570,14 +1596,15 @@ function hailSizeColor(sizeIn) {
   return '#bababa';
 }
 
-// Floating legend shown while the hail overlay is on.
+// Floating legend shown while the hail overlay is on. Labels track both the
+// polygon size tiers (swathTierLabel) and the pin color ramp (hailSizeColor).
 const HAIL_SIZE_TIERS = [
-  { label: '2.5"+ (baseball)', color: '#8b00ff' },
-  { label: '2.0–2.5" (hen egg)', color: '#d92020' },
+  { label: '2.5"+ (baseball)',     color: '#8b00ff' },
+  { label: '2.0–2.5" (hen egg)',   color: '#d92020' },
   { label: '1.5–2.0" (ping pong)', color: '#ff6200' },
-  { label: '1.0–1.5" (quarter)', color: '#ffa500' },
-  { label: '0.5–1.0" (marble)', color: '#ffd700' },
-  { label: '< 0.5" (pea)',    color: '#bababa' },
+  { label: '1.0–1.5" (quarter)',   color: '#ffa500' },
+  { label: '0.75–1" (marble)',     color: '#ffd700' },
+  { label: '< 0.75" (pea)',        color: '#bababa' },
 ];
 function showHailLegend() {
   const host = document.getElementById('mapViewMap');

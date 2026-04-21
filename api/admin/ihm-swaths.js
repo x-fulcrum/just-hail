@@ -1,16 +1,19 @@
 // GET /api/admin/ihm-swaths?begin=M/D/YYYY&end=M/D/YYYY
 //                         &neLat=...&neLng=...&swLat=...&swLng=...
+//                         &showObserved=true|false
 //
-// Proxies Interactive Hail Maps' /Api/StormData endpoint with our
-// stored session cookie. Returns the raw JSON so the admin map UI can
-// render swath polygons client-side.
+// Proxies Interactive Hail Maps' hail layers with our stored session
+// cookie. Returns BOTH:
+//   - pins      : individual hail-impact points from /Api/StormData
+//   - polygons  : hail-swath polygon zones from POST /api/SwathDataFl
+// so the admin map UI can render them together.
 //
 // Notes:
 //  - begin/end default to today if omitted
-//  - bounding box (neLat, neLng, swLat, swLng) should come from the
-//    user's current Leaflet viewport to scope the response size
+//  - bbox only applies to pins (swath polygons are returned whole)
+//  - showObserved=true includes confirmed-report swaths; false = radar only
 
-import { getStormData } from '../../lib/ihm-web.js';
+import { getStormData, getSwathPolygons } from '../../lib/ihm-web.js';
 
 function todayMDY() {
   const d = new Date();
@@ -26,6 +29,7 @@ export default async function handler(req, res) {
   const q = req.query || {};
   const begin = q.begin || q.date || todayMDY();
   const end   = q.end   || q.date || begin;
+  const showObserved = q.showObserved === 'true';
 
   const bbox = {
     neLat: q.neLat ? parseFloat(q.neLat) : undefined,
@@ -35,9 +39,29 @@ export default async function handler(req, res) {
   };
 
   try {
-    const data = await getStormData({ begin, end, ...bbox });
+    // Fetch pins + polygons in parallel. Use Promise.allSettled so a failure
+    // on one side doesn't kill the other.
+    const [pinsRes, polysRes] = await Promise.allSettled([
+      getStormData({ begin, end, ...bbox }),
+      getSwathPolygons({ begin, showObserved }),
+    ]);
+
+    const pins     = pinsRes.status  === 'fulfilled' ? pinsRes.value   : [];
+    const polygons = polysRes.status === 'fulfilled' ? polysRes.value : [];
+    const errors = {};
+    if (pinsRes.status  === 'rejected') errors.pins     = pinsRes.reason?.message;
+    if (polysRes.status === 'rejected') errors.polygons = polysRes.reason?.message;
+
     res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
-    return res.status(200).json({ ok: true, begin, end, bbox, data });
+    return res.status(200).json({
+      ok: true,
+      begin, end, bbox, showObserved,
+      pins,
+      polygons,
+      // Back-compat: legacy callers read `data` as the pins array.
+      data: pins,
+      ...(Object.keys(errors).length ? { errors } : {}),
+    });
   } catch (err) {
     console.error('[ihm-swaths]', err);
     return res.status(err.status || 502).json({
