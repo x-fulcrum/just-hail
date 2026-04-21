@@ -27,14 +27,14 @@
     "api/admin/drafts/[id]/send-email.js": {
       "maxDuration": 30
     },
-    "api/admin/test-email.js": {
-      "maxDuration": 15
-    },
     "api/admin/campaigns/[id]/push-to-ghl.js": {
       "maxDuration": 60
     },
     "api/admin/ihm-swaths.js": {
       "maxDuration": 30
+    },
+    "api/admin/strategist.js": {
+      "maxDuration": 60
     }
   },
   "cleanUrls": true
