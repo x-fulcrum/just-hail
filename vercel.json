@@ -15,7 +15,10 @@
     "api/admin/campaigns/[id].js": {
       "maxDuration": 10
     },
-    "api/admin/campaigns/[id]/enrich.js": {
+    "api/admin/campaigns/[id]/import.js": {
+      "maxDuration": 60
+    },
+    "api/admin/campaigns/[id]/import-from-ihm.js": {
       "maxDuration": 60
     }
   },

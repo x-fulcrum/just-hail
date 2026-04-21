@@ -458,22 +458,85 @@ async function renderCampaigns() {
 }
 
 async function enrichCampaign(id, btn) {
-  // Step 1: preview (no BatchData call, free)
-  let preview;
-  try {
-    const res = await fetch(`/api/admin/campaigns/${id}/enrich`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dryRun: true, take: 3, skipTrace: true }),
-    });
-    preview = await res.json();
-  } catch (err) {
-    alert('Preview failed: ' + err.message);
-    return;
-  }
+  // Open the "Import from IHM Territory" modal
+  showImportFromIhmModal(id, btn);
+}
 
-  // Step 2: modal with three options
-  showEnrichConfirm(id, preview, btn);
+function showImportFromIhmModal(id, btn) {
+  const drawerHost = document.getElementById('drawerHost');
+  drawerHost.innerHTML = `
+    <div class="drawer-backdrop" id="importBackdrop"></div>
+    <div class="drawer" style="width: 480px;">
+      <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair);">
+        <h2 style="margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400;">Import from IHM Territory</h2>
+        <p class="dim" style="margin: 10px 0 0; font-size: 13px; line-height: 1.5;">
+          Create your polygon in IHM, click <strong>Retrieve Contact Data</strong> on the Territory Details page, then paste the Territory ID here. We scrape the contact table and create one lead per row.
+        </p>
+      </div>
+      <form id="importForm" style="padding: 24px 28px; display: flex; flex-direction: column; gap: 16px;">
+        <div>
+          <label class="eyebrow" style="display: block; margin-bottom: 8px;">IHM Territory ID</label>
+          <input id="ihmTerritoryId" type="number" required placeholder="177830" style="width: 100%;" />
+          <div class="mono dim" style="font-size: 10px; margin-top: 4px;">Find it in the IHM URL: /Territory/Details/<strong>177830</strong>?idr=true</div>
+        </div>
+
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input id="ihmDebug" type="checkbox" style="width: auto; height: auto;" />
+          <span style="font-size: 13px;">Debug mode (returns HTML preview if parse yields 0 contacts)</span>
+        </label>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+          <button type="button" class="btn btn-ghost" id="importCancel" style="font-size: 13px;">Cancel</button>
+          <button type="submit" class="btn" id="importGo" style="font-size: 13px;">Import &rarr;</button>
+        </div>
+
+        <div id="importStatus" class="mono dim" style="font-size: 11px; margin-top: 8px;"></div>
+      </form>
+    </div>
+  `;
+
+  const close = () => { drawerHost.innerHTML = ''; };
+  document.getElementById('importBackdrop').addEventListener('click', close);
+  document.getElementById('importCancel').addEventListener('click', close);
+
+  document.getElementById('importForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const territory_id = parseInt(document.getElementById('ihmTerritoryId').value, 10);
+    const debug = document.getElementById('ihmDebug').checked;
+    const statusEl = document.getElementById('importStatus');
+    const goBtn = document.getElementById('importGo');
+
+    goBtn.disabled = true;
+    goBtn.innerHTML = '<span class="spin"></span> Pulling from IHM...';
+    statusEl.textContent = 'Calling IHM server-side with session cookie...';
+
+    try {
+      const res = await fetch(`/api/admin/campaigns/${id}/import-from-ihm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ territory_id, debug }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        statusEl.innerHTML = `<span style="color: var(--accent);">Error: ${data.error || res.status}</span>${data.details ? '<br>' + data.details : ''}`;
+      } else if (!data.ok && data.reason === 'no_contacts_parsed') {
+        statusEl.innerHTML = `<span style="color: var(--amber);">Parsed 0 contacts from IHM.</span><br>HTML length: ${data.html_length} (source: ${data.source}).<br>Did you click "Retrieve Contact Data" in IHM first?<br><br><strong>HTML preview:</strong><pre style="white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow: auto; background: var(--surface-2); padding: 8px; margin-top: 6px; font-size: 10px;">${escapeHtml(data.html_preview || '').slice(0, 1500)}</pre>`;
+      } else {
+        statusEl.innerHTML = `<span style="color: var(--green);">✓ Imported ${data.imported} leads from Territory #${territory_id}.</span><br>Source: ${data.source}. HTML: ${data.html_length} bytes.${data.sample_contacts ? '<br><br><strong>Sample (first 3):</strong><pre style="white-space: pre-wrap; max-height: 160px; overflow: auto; background: var(--surface-2); padding: 8px; margin-top: 6px; font-size: 10px;">' + JSON.stringify(data.sample_contacts, null, 2) + '</pre>' : ''}`;
+        setTimeout(() => { close(); renderCampaigns(); }, 2500);
+      }
+    } catch (err) {
+      statusEl.innerHTML = `<span style="color: var(--accent);">Network error: ${err.message}</span>`;
+    } finally {
+      goBtn.disabled = false;
+      goBtn.innerHTML = 'Import &rarr;';
+    }
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function showEnrichConfirm(id, preview, btn) {
