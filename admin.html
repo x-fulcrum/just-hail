@@ -358,9 +358,35 @@
         <div class="title">Hail Strategist</div>
         <div class="subtitle">· Claude Opus · Tavily · Exa · IHM</div>
       </div>
+      <button id="stratSettingsBtn" type="button" title="Advanced settings">⚙</button>
       <button id="stratClearBtn" type="button" title="Clear conversation">↺</button>
       <button id="stratCloseBtn" type="button" title="Close">×</button>
     </header>
+    <div id="stratSettings" style="display: none; padding: 14px 18px; border-bottom: 1px solid var(--hair); background: var(--surface-2); font-size: 11px;">
+      <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center;">
+        <label for="stratReasoning" style="color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;">Reasoning</label>
+        <select id="stratReasoning" style="width: auto; padding: 4px 8px; font-size: 11px;">
+          <option value="fast">Fast (no extended thinking)</option>
+          <option value="deep">Deep (extended thinking)</option>
+        </select>
+        <label for="stratMaxTokens" style="color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;">Max tokens / turn</label>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input id="stratMaxTokens" type="range" min="2048" max="32000" step="1024" value="8192" style="width: 140px; accent-color: var(--accent);" />
+          <span id="stratMaxTokensVal" class="mono" style="min-width: 52px; text-align: right;">8192</span>
+        </div>
+        <label for="stratThinkingBudget" style="color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;">Thinking budget</label>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input id="stratThinkingBudget" type="range" min="1024" max="16000" step="512" value="4000" style="width: 140px; accent-color: var(--accent);" />
+          <span id="stratThinkingBudgetVal" class="mono" style="min-width: 52px; text-align: right;">4000</span>
+        </div>
+        <label for="stratTemp" style="color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;">Temperature</label>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <input id="stratTemp" type="range" min="0" max="1" step="0.05" value="0.4" style="width: 140px; accent-color: var(--accent);" />
+          <span id="stratTempVal" class="mono" style="min-width: 52px; text-align: right;">0.4</span>
+        </div>
+      </div>
+      <div class="dim" style="margin-top: 8px; font-size: 10px; line-height: 1.4;">Deep reasoning = Claude thinks before answering (up to 16k tokens of reasoning, slower). Higher max tokens = longer replies. Settings persist per session.</div>
+    </div>
     <div id="stratBody">
       <div id="stratWelcome">
         <h3>Where should we hunt today?</h3>
@@ -2161,6 +2187,15 @@ function init() {
   const panel     = document.getElementById('stratPanel');
   const closeBtn  = document.getElementById('stratCloseBtn');
   const clearBtn  = document.getElementById('stratClearBtn');
+  const settingsBtn   = document.getElementById('stratSettingsBtn');
+  const settingsPanel = document.getElementById('stratSettings');
+  const reasoningSel  = document.getElementById('stratReasoning');
+  const maxTokensIn   = document.getElementById('stratMaxTokens');
+  const maxTokensVal  = document.getElementById('stratMaxTokensVal');
+  const thinkBudgetIn = document.getElementById('stratThinkingBudget');
+  const thinkBudgetVal= document.getElementById('stratThinkingBudgetVal');
+  const tempIn        = document.getElementById('stratTemp');
+  const tempVal       = document.getElementById('stratTempVal');
   const body      = document.getElementById('stratBody');
   const welcome   = document.getElementById('stratWelcome');
   const messages  = document.getElementById('stratMessages');
@@ -2174,6 +2209,35 @@ function init() {
   }
   // Force toggle visible (defeat any lingering inline display:none from prior sessions).
   toggle.style.display = 'flex';
+
+  // --- settings (persisted in sessionStorage) ---
+  const SETTINGS_KEY = 'jh-strat-settings';
+  let settings = { reasoning: 'fast', maxTokens: 8192, thinkingBudget: 4000, temperature: 0.4 };
+  try { Object.assign(settings, JSON.parse(sessionStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
+  reasoningSel.value  = settings.reasoning;
+  maxTokensIn.value   = settings.maxTokens;
+  maxTokensVal.textContent = settings.maxTokens;
+  thinkBudgetIn.value = settings.thinkingBudget;
+  thinkBudgetVal.textContent = settings.thinkingBudget;
+  tempIn.value        = settings.temperature;
+  tempVal.textContent = settings.temperature;
+
+  function saveSettings() {
+    settings = {
+      reasoning: reasoningSel.value,
+      maxTokens: parseInt(maxTokensIn.value, 10),
+      thinkingBudget: parseInt(thinkBudgetIn.value, 10),
+      temperature: parseFloat(tempIn.value),
+    };
+    sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }
+  reasoningSel.addEventListener('change', saveSettings);
+  maxTokensIn.addEventListener('input', () => { maxTokensVal.textContent = maxTokensIn.value; saveSettings(); });
+  thinkBudgetIn.addEventListener('input', () => { thinkBudgetVal.textContent = thinkBudgetIn.value; saveSettings(); });
+  tempIn.addEventListener('input', () => { tempVal.textContent = tempIn.value; saveSettings(); });
+  settingsBtn.addEventListener('click', () => {
+    settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
+  });
 
   const OPEN_KEY = 'jh-strat-open';
   const HIST_KEY = 'jh-strat-history';
@@ -2278,7 +2342,7 @@ function init() {
     return el;
   }
 
-  // --- send ---------------------------------------------------------
+  // --- send (SSE streaming) -----------------------------------------
   let inFlight = false;
   async function send() {
     if (inFlight) return;
@@ -2290,33 +2354,122 @@ function init() {
     autogrow();
     addUserMessage(text);
     history.push({ role: 'user', content: text });
-    const thinkingEl = addThinking();
+
+    // Scaffold the assistant message — we'll append text as it streams.
+    welcome.style.display = 'none';
+    const msgEl = document.createElement('div');
+    msgEl.className = 'strat-msg assistant';
+    msgEl.innerHTML = `<div class="strat-steps-row"></div><div class="bubble"></div>`;
+    const stepsRow = msgEl.querySelector('.strat-steps-row');
+    const bubble   = msgEl.querySelector('.bubble');
+    const thinkingInd = document.createElement('div');
+    thinkingInd.className = 'strat-thinking';
+    thinkingInd.innerHTML = '<span class="spin"></span> Thinking…';
+    msgEl.appendChild(thinkingInd);
+    messages.appendChild(msgEl);
+    scrollToBottom();
+
+    const toolChipById = new Map();  // tool_use_id → chip element
+    let streamedText = '';
+
+    const requestBody = {
+      messages: history,
+      settings: {
+        maxTokens: settings.maxTokens,
+        useThinking: settings.reasoning === 'deep',
+        thinkingBudget: settings.thinkingBudget,
+        temperature: settings.temperature,
+      },
+    };
 
     try {
       const res = await fetch('/api/admin/strategist', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history }),
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        body: JSON.stringify(requestBody),
       });
-      const data = await res.json().catch(() => ({}));
-      thinkingEl.remove();
-
-      if (!res.ok || !data.ok) {
-        addAssistantMessage(
-          `⚠️ Strategist error: ${data.error || res.status}. ${res.status >= 500 ? 'Server hiccup — try again.' : ''}`,
-          []
-        );
+      if (!res.ok) {
+        const errTxt = await res.text().catch(() => '');
+        bubble.innerHTML = renderAssistantText(`⚠️ Strategist error: ${res.status} ${errTxt.slice(0, 240)}`);
+        thinkingInd.remove();
         return;
       }
-      const reply = data.reply || '(empty reply)';
-      addAssistantMessage(reply, data.steps || []);
-      history.push({ role: 'assistant', content: reply });
-      // Keep history lean (last 20 turns)
-      if (history.length > 20) history = history.slice(-20);
-      sessionStorage.setItem(HIST_KEY, JSON.stringify(history));
+      if (!res.body) throw new Error('No response body (streaming unsupported by this browser?)');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let sseBuffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        // SSE events are separated by blank lines
+        const parts = sseBuffer.split(/\n\n/);
+        sseBuffer = parts.pop() || '';
+        for (const part of parts) {
+          const line = part.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
+          let evt;
+          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+          handleStreamEvent(evt);
+        }
+      }
+
+      function handleStreamEvent(evt) {
+        switch (evt.type) {
+          case 'text_delta': {
+            if (thinkingInd.parentNode) thinkingInd.remove();
+            streamedText += evt.text || '';
+            bubble.innerHTML = renderAssistantText(streamedText);
+            scrollToBottom();
+            break;
+          }
+          case 'thinking_delta': {
+            thinkingInd.innerHTML = `<span class="spin"></span> Thinking · ${escapeHtml((evt.text || '').slice(-80))}`;
+            break;
+          }
+          case 'tool_start': {
+            if (thinkingInd.parentNode) thinkingInd.remove();
+            const chip = document.createElement('span');
+            chip.className = 'strat-step';
+            chip.innerHTML = `<span class="spin" style="width:8px;height:8px;"></span> ${escapeHtml(evt.name)}`;
+            chip.title = JSON.stringify(evt.input || {}, null, 2);
+            toolChipById.set(evt.id, chip);
+            stepsRow.appendChild(chip);
+            scrollToBottom();
+            break;
+          }
+          case 'tool_result': {
+            const chip = toolChipById.get(evt.id);
+            if (!chip) break;
+            chip.classList.add(evt.ok ? 'ok' : 'err');
+            chip.innerHTML = `${escapeHtml(chip.textContent.trim() || '?')} · ${escapeHtml(evt.preview || (evt.ok ? 'ok' : 'err'))}`;
+            break;
+          }
+          case 'iter_end': {
+            // Another turn about to start (likely more tool calls or a final reply)
+            if (thinkingInd.parentNode) thinkingInd.remove();
+            msgEl.appendChild(thinkingInd);
+            break;
+          }
+          case 'done': {
+            thinkingInd.remove();
+            history.push({ role: 'assistant', content: streamedText || '(empty)' });
+            if (history.length > 20) history = history.slice(-20);
+            sessionStorage.setItem(HIST_KEY, JSON.stringify(history));
+            break;
+          }
+          case 'error': {
+            thinkingInd.remove();
+            bubble.innerHTML += `<div style="color: var(--accent); margin-top: 8px;">⚠️ ${escapeHtml(evt.message || 'error')}</div>`;
+            break;
+          }
+        }
+      }
     } catch (err) {
-      thinkingEl.remove();
-      addAssistantMessage(`⚠️ Network error: ${err.message || err}. Check your connection and try again.`, []);
+      thinkingInd.remove();
+      bubble.innerHTML = renderAssistantText(`⚠️ Network error: ${err.message || err}.`);
     } finally {
       inFlight = false;
       sendBtn.disabled = false;

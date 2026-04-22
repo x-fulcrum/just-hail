@@ -1,164 +1,247 @@
-// POST /api/admin/strategist
+// POST /api/admin/strategist  (streams Server-Sent Events)
 // ---------------------------------------------------------------
-// Multi-turn chat with Claude Opus 4.7 as Charlie's Hail Canvassing
-// Strategist. Claude has access to tools that query:
-//   - Just Hail's own campaigns / leads (Supabase)
-//   - IHM storm data (via our session-cookie proxy)
-//   - General web search (Tavily)
-//   - Social/forum search (Exa — where people actually post hail damage)
-//   - URL content extraction (Jina Reader)
+// Charlie's advanced hail-canvassing + sales agent.
 //
-// Body: { messages: [{role, content}, ...] }
-// Response: { reply, steps, usage }
-//   - reply   : final assistant text
-//   - steps   : tool calls executed this turn (so UI can show "searched
-//               Exa for X", "queried 3 campaigns", etc.)
+// Body: {
+//   messages: [{role, content}, ...],
+//   settings?: {
+//     maxTokens?: number        (default 8192, max 32000)
+//     useThinking?: boolean     (extended thinking mode — slower, deeper)
+//     thinkingBudget?: number   (default 4000, max 16000)
+//     temperature?: number      (default 0.4)
+//     reasoningLevel?: 'fast'|'deep'  (convenience toggle)
+//   }
+// }
+//
+// Stream protocol (one JSON object per SSE `data:` line):
+//   { type: 'text_delta',     text }
+//   { type: 'thinking_delta', text }
+//   { type: 'tool_start',     id, name, input? }
+//   { type: 'tool_result',    id, ok, preview }
+//   { type: 'iter_end',       iteration }       (one claude turn done)
+//   { type: 'done',           usage, steps }    (all turns done)
+//   { type: 'error',          message }
 
 import Anthropic from '@anthropic-ai/sdk';
 import { supabase } from '../../lib/supabase.js';
-import { tavilySearch, exaSearch, exaSocialSearch, jinaRead } from '../../lib/research.js';
-import { getStormData } from '../../lib/ihm-web.js';
+import {
+  tavilySearch, exaSearch, exaSocialSearch, jinaRead,
+  perplexityResearch, nominatimSearch, nominatimReverse, nwsActiveAlerts,
+} from '../../lib/research.js';
+import { getStormData, getSwathPolygons, getImpactedPlaces } from '../../lib/ihm-web.js';
 
 const client = new Anthropic();
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
 
-// ---------------------------------------------------------------
-// Strategist system prompt — who Claude is, how to act
-// ---------------------------------------------------------------
+// =================================================================
+// System prompt
+// =================================================================
 const SYSTEM_PROMPT = `
-You are the Hail Canvassing Strategist for Just Hail — a 4-person expert paintless dent repair (PDR) team owned by Charlie Ohnstad. 18 years in business, same phone number (512) 221-3013 since 2008, currently based in Leander, TX (shop moves with storms).
+You are Charlie Ohnstad's Hail Canvassing + Sales Strategist for Just Hail — a 4-person expert paintless dent repair (PDR) team. 18 years in business, same phone (512) 221-3013 since 2008, based in Leander TX (shop moves with storms). 24,800+ vehicles restored. Bills insurance direct w/ 38 carriers. Lifetime workmanship warranty.
 
-Your job is to help Charlie make SURGICAL decisions about where to pull polygons, which storms to chase, and where to find inquiry-ready customers. Charlie closes 100% of warm leads he talks to — your job is to surface signals, not generate noise.
+YOUR MISSION: Help Charlie replace his entire traditional sales team by making surgical decisions about where to pull polygons, which storms to chase, who to contact, and how to engage. You are the tip of the spear.
 
-You have these tools:
-- search_our_campaigns: query Just Hail's Supabase campaigns table (polygons Charlie has pulled)
-- get_campaign_detail: full info on one campaign including lead counts
-- get_recent_storms: hail webhooks that landed in our system
-- fetch_ihm_storms: live hail data from IHM for a date + geographic bounding box
-- tavily_search: general web search — news, local coverage, forecasts
-- exa_social_search: semantic search of social media (Reddit, Twitter/X, NextDoor, Facebook, TikTok). THIS is the superpower — use it to find people actually posting hail damage photos and asking for repair referrals.
-- exa_general_search: semantic web search for anything non-social
-- jina_read_url: extract full readable content from a specific URL (use after a search surfaces a promising result)
+TOOLS — USE THEM AGGRESSIVELY AND IN PARALLEL WHEN POSSIBLE:
+
+Hail + storm data:
+- fetch_ihm_swath_polygons : get the actual storm swath polygons for a date (with size tiers)
+- fetch_ihm_storms         : individual hail pins for a date + bounding box
+- fetch_ihm_impacted_places: zip/city-level counts of impacted places for a date (GOOD first call to scope a storm)
+- get_recent_storms        : storms that hit our IHM webhook
+- nws_active_alerts        : National Weather Service live alerts (by state)
+
+Just Hail's CRM state:
+- search_our_campaigns     : what polygons Charlie has already pulled
+- get_campaign_detail      : full info on one campaign (sample leads + bounds)
+- query_leads              : search leads table w/ filters (campaign_id, zip, city, name, has_email, has_phone)
+- query_drafts             : search drafts (pending/approved/sent/failed) w/ filters
+- lead_stats               : aggregate counts grouped by campaign/city/zip/state
+
+Research:
+- perplexity_research      : deep research w/ citations (multi-source, prefers recent)
+- tavily_search            : general web news search
+- exa_social_search        : semantic search of Reddit/X/NextDoor/FB/TikTok/Insta — WHERE PEOPLE POST HAIL DAMAGE
+- exa_general_search       : semantic search (non-social)
+- jina_read_url            : extract full clean text from a specific URL
+
+Geo utilities:
+- reverse_geocode          : lat/lng → city/state/zip
+- forward_geocode          : address → lat/lng
 
 HOW TO REASON:
-1. When Charlie asks "where should I go next?" — first see what he's already covered (search_our_campaigns), then look at recent storms (fetch_ihm_storms or get_recent_storms), then search Exa social for people posting damage in the uncovered areas.
-2. When he asks about a specific area or storm — combine Tavily (news) + Exa (social posts) to give him a real-time read.
-3. Don't make stuff up. If tools return nothing useful, say so.
-4. Be decisive. Give specific neighborhoods, specific zip codes, specific URLs to posts. Skip "maybe" — Charlie's time is money.
-5. When you find specific social posts mentioning hail damage in an identifiable location, format them clearly with the URL so Charlie can click through. These are potential warm leads.
-6. Short paragraphs. Numbered lists. Bold the action items. No marketing-speak.
-7. If you use a tool and it fails, try an alternative. Don't get stuck.
-
-BUSINESS FACTS you can leverage in responses:
-- Leander, TX shop (308 Hazelwood St Ste 1, 78641) is current base of ops — but Charlie moves crews to wherever storms justify it
-- Service area extends through Central Texas primarily, but Charlie chases storms nationwide
-- Bills insurance direct with 38 carriers; most customers pay $0 out of pocket
-- Lifetime workmanship warranty
-- 24,800+ vehicles restored over 18 years
+1. For "where should I canvass" questions: start with fetch_ihm_impacted_places to see the damage distribution, cross-reference search_our_campaigns to see gaps, then exa_social_search for uncovered areas with posting activity.
+2. Run tools IN PARALLEL when they're independent. Don't call them one by one if you can fire 3 at once.
+3. Be decisive. Charlie's time is money. Specific zips, specific streets, specific post URLs — no "maybe" or "probably." If a tool returns nothing, say so plainly and pivot.
+4. When you find social posts from real people with hail damage, surface the URL + the specific text so Charlie can reach out.
+5. Charlie closes 100% of warm leads. Your job is to feed him qualified signals, not to write copy (he has other tools for drafting).
+6. Format: short paragraphs, bolded action items, numbered lists when ordering matters. No marketing filler.
+7. If a tool fails, try an alternative — don't get stuck.
+8. CRM schema:
+   - campaigns: id, name, status, target_input.polygon, property_hits, contact_hits, created_at
+   - leads: id, campaign_id, first_name, last_name, email, phone, mobile, street, city, state, zip
+   - drafts: id, lead_id, channel (email/sms), status (pending/approved/sent/failed/rejected), subject, body, created_at, sent_at
+   - storm_events: id, received_at, event_type, swath_size_in, city, state, zip, lat, lng
 `.trim();
 
-// ---------------------------------------------------------------
-// Tool definitions (schema Claude sees)
-// ---------------------------------------------------------------
+// =================================================================
+// Tool definitions
+// =================================================================
 const TOOLS = [
-  {
-    name: 'search_our_campaigns',
-    description: "Search Just Hail's campaigns table in Supabase. Returns a list of polygons Charlie has pulled, with lead counts, status, dates. Use this to see what's already been covered.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        query:  { type: 'string', description: 'Optional text filter — matches campaign.name' },
-        limit:  { type: 'integer', default: 20, maximum: 50 },
-      },
-    },
-  },
-  {
-    name: 'get_campaign_detail',
-    description: 'Full info on one campaign: leads, polygon coordinates, metadata. Use AFTER search_our_campaigns to drill into a specific one.',
-    input_schema: {
-      type: 'object',
-      properties: { campaign_id: { type: 'integer' } },
-      required: ['campaign_id'],
-    },
-  },
-  {
-    name: 'get_recent_storms',
-    description: "Recent storm events that hit Just Hail's webhook endpoint (from IHM's hail alert subscription). Returns events of all types.",
-    input_schema: {
-      type: 'object',
-      properties: { days: { type: 'integer', default: 14, maximum: 90 } },
-    },
-  },
-  {
-    name: 'fetch_ihm_storms',
-    description: "Live query to IHM's StormData API. Returns hail swath data for a date range within a geographic bounding box. Use this to see where recent hail actually fell.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        begin: { type: 'string', description: 'Start date in M/D/YYYY format' },
-        end:   { type: 'string', description: 'End date in M/D/YYYY format (same as begin for single day)' },
-        neLat: { type: 'number', description: 'Northeast corner latitude of bounding box' },
-        neLng: { type: 'number' },
-        swLat: { type: 'number' },
-        swLng: { type: 'number' },
-      },
-      required: ['begin', 'end'],
-    },
-  },
-  {
-    name: 'tavily_search',
-    description: 'General web search for news, forecasts, reports. Returns snippets + URLs. Use for "what happened in X" or local news coverage of storms.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string' },
-        max_results: { type: 'integer', default: 5, maximum: 10 },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'exa_social_search',
-    description: "Semantic search of social media platforms (Reddit, Twitter/X, Facebook, NextDoor, TikTok, Instagram). USE THIS to find people actually posting hail damage photos, asking for repair shops, or discussing recent storms in their neighborhood. Query in natural language: 'people posting hail damage photos Cedar Park Texas April 2026' — return includes post URL, snippet, highlights, author when available.",
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Natural language query about what you want to find' },
-        num_results: { type: 'integer', default: 8, maximum: 15 },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'exa_general_search',
-    description: 'Semantic web search (non-social). Good for finding structured info, like lists of affected zips, city press releases, storm summaries.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string' },
-        num_results: { type: 'integer', default: 5, maximum: 15 },
-      },
-      required: ['query'],
-    },
-  },
-  {
-    name: 'jina_read_url',
-    description: "Extract clean readable content from a specific URL (strips nav, ads, boilerplate). Use after a search returns a promising link and you want the full article/post text.",
-    input_schema: {
-      type: 'object',
-      properties: { url: { type: 'string' } },
-      required: ['url'],
-    },
-  },
+  // ---- Hail data ----
+  { name: 'fetch_ihm_swath_polygons',
+    description: 'Get IHM hail-swath polygons for a date. Returns an array of {sizeTier, points:[{lat,lng}]}. Swaths are the BIG colored shapes IHM shows — better than pins for understanding storm coverage.',
+    input_schema: { type: 'object', required: ['begin'], properties: {
+      begin: { type: 'string', description: 'Date in M/D/YYYY format' },
+      showObserved: { type: 'boolean', description: 'Include confirmed-report swaths (default false = radar only)' },
+    }}},
+  { name: 'fetch_ihm_storms',
+    description: 'Individual hail-impact pins from IHM for a date + viewport. Each pin has Lat/Long/Size/Comments.',
+    input_schema: { type: 'object', required: ['begin'], properties: {
+      begin: { type: 'string' }, end: { type: 'string' },
+      neLat: { type: 'number' }, neLng: { type: 'number' },
+      swLat: { type: 'number' }, swLng: { type: 'number' },
+    }}},
+  { name: 'fetch_ihm_impacted_places',
+    description: 'Quick list of zips/cities with hail activity on a date. GREAT as a first call to scope "where did hail hit today" before pulling detailed pins or polygons.',
+    input_schema: { type: 'object', required: ['date'], properties: {
+      date: { type: 'string', description: 'M/D/YYYY' },
+    }}},
+  { name: 'get_recent_storms',
+    description: "Storm events that hit Just Hail's webhook endpoint from IHM alerts.",
+    input_schema: { type: 'object', properties: { days: { type: 'integer', default: 14, maximum: 90 } }}},
+  { name: 'nws_active_alerts',
+    description: 'National Weather Service active alerts (severe thunderstorm warnings, hail advisories, etc.). Free, no key.',
+    input_schema: { type: 'object', properties: {
+      state: { type: 'string', description: '2-letter state abbrev (TX, OK, etc.)' },
+      event: { type: 'string', description: 'Event type filter (e.g. "Severe Thunderstorm Warning")' },
+      severity: { type: 'string', enum: ['Extreme','Severe','Moderate','Minor','Unknown'] },
+    }}},
+
+  // ---- Our CRM ----
+  { name: 'search_our_campaigns',
+    description: "Campaigns in Charlie's Supabase. Each campaign = one polygon he's pulled.",
+    input_schema: { type: 'object', properties: {
+      query: { type: 'string', description: 'Optional name filter' },
+      limit: { type: 'integer', default: 20, maximum: 50 },
+    }}},
+  { name: 'get_campaign_detail',
+    description: 'Full info on one campaign incl. bounding box + 25 sample leads.',
+    input_schema: { type: 'object', required: ['campaign_id'], properties: {
+      campaign_id: { type: 'integer' },
+    }}},
+  { name: 'query_leads',
+    description: 'Search the leads table with filters. Returns matching leads (up to 200). Combine filters as needed.',
+    input_schema: { type: 'object', properties: {
+      campaign_id: { type: 'integer' },
+      zip:         { type: 'string', description: 'Exact zip' },
+      city:        { type: 'string', description: 'Partial match, case-insensitive' },
+      name:        { type: 'string', description: 'Partial first OR last name match' },
+      has_email:   { type: 'boolean' },
+      has_phone:   { type: 'boolean' },
+      limit:       { type: 'integer', default: 50, maximum: 200 },
+    }}},
+  { name: 'query_drafts',
+    description: 'Search the drafts table. Drafts are Claude-written email/SMS per-lead. Filter by status, channel, campaign.',
+    input_schema: { type: 'object', properties: {
+      campaign_id: { type: 'integer' },
+      status:      { type: 'string', enum: ['pending','approved','sent','failed','rejected'] },
+      channel:     { type: 'string', enum: ['email','sms'] },
+      since_days:  { type: 'integer', description: 'Only drafts created in the last N days' },
+      limit:       { type: 'integer', default: 50, maximum: 200 },
+    }}},
+  { name: 'lead_stats',
+    description: 'Aggregate lead counts. Group by campaign, city, or zip. Optionally filter by campaign_id.',
+    input_schema: { type: 'object', required: ['group_by'], properties: {
+      group_by:    { type: 'string', enum: ['campaign','city','zip','state'] },
+      campaign_id: { type: 'integer', description: 'Optional — scope stats to a single campaign' },
+      limit:       { type: 'integer', default: 30, maximum: 100 },
+    }}},
+
+  // ---- Research ----
+  { name: 'perplexity_research',
+    description: 'Deep multi-source research with citations. Best for questions that need synthesis across several sources. Slower than Tavily/Exa but more thorough.',
+    input_schema: { type: 'object', required: ['query'], properties: {
+      query: { type: 'string' },
+      model: { type: 'string', enum: ['sonar','sonar-pro'], default: 'sonar' },
+    }}},
+  { name: 'tavily_search',
+    description: 'General web news search. Returns snippets + URLs. Good for recent news coverage.',
+    input_schema: { type: 'object', required: ['query'], properties: {
+      query: { type: 'string' },
+      max_results: { type: 'integer', default: 5, maximum: 10 },
+    }}},
+  { name: 'exa_social_search',
+    description: "Semantic search of Reddit/X/NextDoor/FB/TikTok/Instagram. THE SUPERPOWER — finds people actually posting hail damage. Natural-language query.",
+    input_schema: { type: 'object', required: ['query'], properties: {
+      query: { type: 'string' },
+      num_results: { type: 'integer', default: 8, maximum: 15 },
+    }}},
+  { name: 'exa_general_search',
+    description: 'Semantic web search (non-social).',
+    input_schema: { type: 'object', required: ['query'], properties: {
+      query: { type: 'string' },
+      num_results: { type: 'integer', default: 5, maximum: 15 },
+    }}},
+  { name: 'jina_read_url',
+    description: 'Extract clean readable content from a specific URL. Use after a search returns a promising link.',
+    input_schema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } }}},
+
+  // ---- Geo ----
+  { name: 'reverse_geocode',
+    description: 'lat/lng → {city, state, zip}. Uses free Nominatim (OpenStreetMap).',
+    input_schema: { type: 'object', required: ['lat','lng'], properties: {
+      lat: { type: 'number' }, lng: { type: 'number' },
+    }}},
+  { name: 'forward_geocode',
+    description: 'Address/place query → [{lat,lng,display_name,address}]. Use to resolve a place Charlie mentions to coordinates.',
+    input_schema: { type: 'object', required: ['query'], properties: {
+      query: { type: 'string' },
+      limit: { type: 'integer', default: 3, maximum: 10 },
+    }}},
 ];
 
-// ---------------------------------------------------------------
-// Tool executor — runs the actual function when Claude calls a tool
-// ---------------------------------------------------------------
+// =================================================================
+// Tool runner
+// =================================================================
 async function runTool(name, input) {
   try {
     switch (name) {
+      case 'fetch_ihm_swath_polygons': {
+        const data = await getSwathPolygons({ begin: input.begin, showObserved: !!input.showObserved });
+        const summarized = data.slice(0, 40).map((p) => ({
+          sizeTier: p.sizeTier,
+          points: p.points.length,
+          bbox: bboxOf(p.points),
+        }));
+        return { count: data.length, polygons: summarized };
+      }
+      case 'fetch_ihm_storms': {
+        const data = await getStormData(input);
+        const arr = Array.isArray(data) ? data : [];
+        return {
+          count: arr.length,
+          pins: arr.slice(0, 30).map((p) => ({
+            lat: p.Lat, lng: p.Long, size_in: p.Size, heat: p.Heat,
+            comments: String(p.Comments || '').replace(/<br\s*\/?>/gi, ' ').slice(0, 160),
+          })),
+        };
+      }
+      case 'fetch_ihm_impacted_places': {
+        const data = await getImpactedPlaces({ date: input.date });
+        const arr = Array.isArray(data) ? data : (Array.isArray(data?.Places) ? data.Places : []);
+        return { count: arr.length, places: arr.slice(0, 50) };
+      }
+      case 'get_recent_storms': {
+        const days = Math.min(parseInt(input.days || 14, 10), 90);
+        const since = new Date(Date.now() - days * 86400000).toISOString();
+        const { data } = await supabase.from('storm_events').select('id, received_at, event_type, alert_category, swath_size_in, street, city, state, zip, lat, lng').gt('received_at', since).order('received_at', { ascending: false }).limit(100);
+        return { events: data || [] };
+      }
+      case 'nws_active_alerts': {
+        return { alerts: await nwsActiveAlerts(input) };
+      }
+
       case 'search_our_campaigns': {
         const { query = null, limit = 20 } = input;
         let q = supabase.from('campaigns').select('id, name, status, target_type, target_input, created_at, property_hits, contact_hits, enrichment_finished_at').order('created_at', { ascending: false }).limit(Math.min(limit, 50));
@@ -167,8 +250,7 @@ async function runTool(name, input) {
         if (error) return { error: error.message };
         return {
           campaigns: (data || []).map((c) => ({
-            id: c.id, name: c.name, status: c.status,
-            created_at: c.created_at,
+            id: c.id, name: c.name, status: c.status, created_at: c.created_at,
             leads: c.property_hits || 0,
             contacts: c.contact_hits || 0,
             ihm_territory_id: c.target_input?.territory_id || null,
@@ -186,51 +268,87 @@ async function runTool(name, input) {
         if (!c) return { error: 'not found' };
         return {
           campaign: {
-            id: c.id, name: c.name, status: c.status,
-            created_at: c.created_at,
+            id: c.id, name: c.name, status: c.status, created_at: c.created_at,
             target_type: c.target_type,
             territory_id: c.target_input?.territory_id || null,
             polygon_points: c.target_input?.polygon?.length || 0,
-            polygon_bounds: c.target_input?.polygon ? bboxOfPolygon(c.target_input.polygon) : null,
+            polygon_bounds: c.target_input?.polygon ? bboxOf(c.target_input.polygon) : null,
             leads: c.property_hits || 0,
             contacts: c.contact_hits || 0,
           },
           sample_leads: leads || [],
         };
       }
-      case 'get_recent_storms': {
-        const days = Math.min(parseInt(input.days || 14, 10), 90);
-        const since = new Date(Date.now() - days * 86400000).toISOString();
-        const { data } = await supabase.from('storm_events').select('id, received_at, event_type, alert_category, swath_size_in, street, city, state, zip, lat, lng').gt('received_at', since).order('received_at', { ascending: false }).limit(100);
-        return { events: data || [] };
+      case 'query_leads': {
+        let q = supabase.from('leads').select('id, campaign_id, first_name, last_name, email, phone, mobile, street, city, state, zip').limit(Math.min(input.limit || 50, 200));
+        if (input.campaign_id) q = q.eq('campaign_id', input.campaign_id);
+        if (input.zip)         q = q.eq('zip', input.zip);
+        if (input.city)        q = q.ilike('city', `%${input.city}%`);
+        if (input.name)        q = q.or(`first_name.ilike.%${input.name}%,last_name.ilike.%${input.name}%`);
+        if (input.has_email === true)  q = q.not('email', 'is', null);
+        if (input.has_email === false) q = q.is('email', null);
+        if (input.has_phone === true)  q = q.or('phone.not.is.null,mobile.not.is.null');
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        return { count: data?.length || 0, leads: data || [] };
       }
-      case 'fetch_ihm_storms': {
-        const { begin, end, neLat, neLng, swLat, swLng } = input;
-        const data = await getStormData({ begin, end, neLat, neLng, swLat, swLng });
-        const preview = JSON.stringify(data);
-        return { raw: preview.length > 3000 ? preview.slice(0, 3000) + '…' : preview };
+      case 'query_drafts': {
+        let q = supabase.from('drafts').select('id, lead_id, channel, status, subject, body, created_at, sent_at').order('created_at', { ascending: false }).limit(Math.min(input.limit || 50, 200));
+        if (input.campaign_id) {
+          // drafts are joined via lead_id — filter by subquery
+          const { data: leadIds } = await supabase.from('leads').select('id').eq('campaign_id', input.campaign_id).limit(5000);
+          const ids = (leadIds || []).map((r) => r.id);
+          if (!ids.length) return { count: 0, drafts: [] };
+          q = q.in('lead_id', ids);
+        }
+        if (input.status)  q = q.eq('status',  input.status);
+        if (input.channel) q = q.eq('channel', input.channel);
+        if (input.since_days) {
+          const cutoff = new Date(Date.now() - input.since_days * 86400000).toISOString();
+          q = q.gte('created_at', cutoff);
+        }
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        return {
+          count: data?.length || 0,
+          drafts: (data || []).map((d) => ({
+            ...d,
+            body: (d.body || '').slice(0, 400),
+          })),
+        };
       }
-      case 'tavily_search': {
-        return await tavilySearch(input.query, { maxResults: input.max_results });
+      case 'lead_stats': {
+        // Pull a page of leads, aggregate in-process. Supabase doesn't expose SQL GROUP BY
+        // over the REST API without an RPC, so this is the portable option.
+        let q = supabase.from('leads').select('campaign_id, city, state, zip').limit(5000);
+        if (input.campaign_id) q = q.eq('campaign_id', input.campaign_id);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        const counts = {};
+        for (const r of data || []) {
+          const key = r[input.group_by === 'campaign' ? 'campaign_id' : input.group_by] ?? '(null)';
+          counts[key] = (counts[key] || 0) + 1;
+        }
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, Math.min(input.limit || 30, 100));
+        return { group_by: input.group_by, total_scanned: data?.length || 0, groups: sorted.map(([k, v]) => ({ key: k, count: v })) };
       }
-      case 'exa_social_search': {
-        return await exaSocialSearch(input.query, { numResults: input.num_results });
-      }
-      case 'exa_general_search': {
-        return await exaSearch(input.query, { numResults: input.num_results });
-      }
-      case 'jina_read_url': {
-        return await jinaRead(input.url);
-      }
-      default:
-        return { error: 'unknown tool: ' + name };
+
+      case 'perplexity_research':  return await perplexityResearch(input.query, { model: input.model });
+      case 'tavily_search':        return await tavilySearch(input.query, { maxResults: input.max_results });
+      case 'exa_social_search':    return await exaSocialSearch(input.query, { numResults: input.num_results });
+      case 'exa_general_search':   return await exaSearch(input.query, { numResults: input.num_results });
+      case 'jina_read_url':        return await jinaRead(input.url);
+      case 'reverse_geocode':      return await nominatimReverse(input.lat, input.lng);
+      case 'forward_geocode':      return { results: await nominatimSearch(input.query, { limit: input.limit }) };
+
+      default: return { error: 'unknown tool: ' + name };
     }
   } catch (err) {
     return { error: err.message || String(err) };
   }
 }
 
-function bboxOfPolygon(points) {
+function bboxOf(points) {
   let n = -90, s = 90, e = -180, w = 180;
   for (const p of points) {
     n = Math.max(n, p.lat); s = Math.min(s, p.lat);
@@ -239,9 +357,29 @@ function bboxOfPolygon(points) {
   return { neLat: n, neLng: e, swLat: s, swLng: w };
 }
 
-// ---------------------------------------------------------------
-// Chat handler — runs Claude tool loop for ONE user turn
-// ---------------------------------------------------------------
+function summarizeResult(result) {
+  if (!result) return '';
+  if (result.error)      return `err: ${String(result.error).slice(0, 80)}`;
+  if (typeof result.count === 'number') return `${result.count} items`;
+  if (Array.isArray(result.campaigns)) return `${result.campaigns.length} campaigns`;
+  if (Array.isArray(result.events))    return `${result.events.length} events`;
+  if (Array.isArray(result.results))   return `${result.results.length} results${result.answer ? ' + answer' : ''}`;
+  if (Array.isArray(result.alerts))    return `${result.alerts.length} alerts`;
+  if (Array.isArray(result.places))    return `${result.places.length} places`;
+  if (Array.isArray(result.rows))      return `${result.row_count} rows`;
+  if (result.campaign)                 return `campaign #${result.campaign.id}`;
+  if (result.content)                  return `${result.content.length} chars`;
+  if (result.answer)                   return `answer + ${Array.isArray(result.citations) ? result.citations.length : 0} citations`;
+  return 'ok';
+}
+
+// =================================================================
+// SSE helpers
+// =================================================================
+function sseWrite(res, event) {
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
 async function readJson(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -249,86 +387,107 @@ async function readJson(req) {
   try { return JSON.parse(body || '{}'); } catch { return {}; }
 }
 
+// =================================================================
+// Handler — streams SSE
+// =================================================================
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
+
   const body = await readJson(req);
   const inputMessages = Array.isArray(body?.messages) ? body.messages : [];
   if (!inputMessages.length) return res.status(400).json({ error: 'messages[] required' });
 
-  // Copy so we don't mutate the client's array
-  const messages = inputMessages.map((m) => ({ role: m.role, content: m.content }));
+  const s = body.settings || {};
+  const maxTokens      = Math.min(Math.max(parseInt(s.maxTokens || 8192, 10), 1024), 32000);
+  const useThinking    = !!s.useThinking;
+  const thinkingBudget = Math.min(Math.max(parseInt(s.thinkingBudget || 4000, 10), 1024), 16000);
+  const temperature    = typeof s.temperature === 'number' ? Math.min(Math.max(s.temperature, 0), 1) : undefined;
 
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const messages = inputMessages.map((m) => ({ role: m.role, content: m.content }));
   const steps = [];
-  let finalText = '';
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
+  let totalInput = 0, totalOutput = 0;
   const MAX_ITER = 6;
 
   try {
     for (let iter = 0; iter < MAX_ITER; iter++) {
-      const resp = await client.messages.create({
+      const streamParams = {
         model: 'claude-opus-4-7',
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         system: SYSTEM_PROMPT,
         tools: TOOLS,
         messages,
+      };
+      if (temperature != null) streamParams.temperature = temperature;
+      if (useThinking) {
+        streamParams.thinking = { type: 'enabled', budget_tokens: thinkingBudget };
+        // Anthropic requires temperature=1 (or unset) when thinking is enabled.
+        delete streamParams.temperature;
+      }
+
+      const stream = client.messages.stream(streamParams);
+
+      // Forward deltas to the client as they arrive
+      stream.on('text', (delta) => {
+        sseWrite(res, { type: 'text_delta', text: delta });
       });
-      totalInputTokens  += resp.usage?.input_tokens  || 0;
-      totalOutputTokens += resp.usage?.output_tokens || 0;
+      stream.on('thinking', (delta) => {
+        sseWrite(res, { type: 'thinking_delta', text: delta });
+      });
 
-      // Collect text and tool_use blocks
-      const textOut = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-      const toolCalls = resp.content.filter((b) => b.type === 'tool_use');
+      const finalMsg = await stream.finalMessage();
+      totalInput  += finalMsg.usage?.input_tokens  || 0;
+      totalOutput += finalMsg.usage?.output_tokens || 0;
 
-      // Always append assistant turn (text + tool_use) to history
-      messages.push({ role: 'assistant', content: resp.content });
+      // Append the full assistant turn to history (preserves tool_use + thinking blocks)
+      messages.push({ role: 'assistant', content: finalMsg.content });
 
-      if (resp.stop_reason === 'end_turn' || toolCalls.length === 0) {
-        finalText = textOut;
+      const toolCalls = (finalMsg.content || []).filter((b) => b.type === 'tool_use');
+      if (finalMsg.stop_reason === 'end_turn' || toolCalls.length === 0) {
         break;
       }
 
-      // Execute tool calls
-      const toolResults = [];
+      // Notify UI that tools are starting, then run them in parallel
       for (const call of toolCalls) {
+        sseWrite(res, { type: 'tool_start', id: call.id, name: call.name, input: call.input });
+      }
+
+      const toolResults = await Promise.all(toolCalls.map(async (call) => {
         const result = await runTool(call.name, call.input || {});
-        steps.push({ tool: call.name, input: call.input, ok: !result.error, preview: summarizeResult(result) });
-        toolResults.push({
+        const preview = summarizeResult(result);
+        const ok = !result?.error;
+        steps.push({ tool: call.name, input: call.input, ok, preview });
+        sseWrite(res, { type: 'tool_result', id: call.id, ok, preview });
+        return {
           type: 'tool_result',
           tool_use_id: call.id,
           content: JSON.stringify(result).slice(0, 30000),
-          is_error: !!result.error,
-        });
-      }
+          is_error: !ok,
+        };
+      }));
 
       messages.push({ role: 'user', content: toolResults });
+      sseWrite(res, { type: 'iter_end', iteration: iter + 1 });
     }
 
-    if (!finalText) {
-      finalText = '(Strategist hit the tool-call cap without finalizing. Try re-asking.)';
-    }
-    return res.status(200).json({
-      ok: true,
-      reply: finalText,
+    sseWrite(res, {
+      type: 'done',
+      usage: { input_tokens: totalInput, output_tokens: totalOutput },
       steps,
-      usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
     });
+    res.end();
   } catch (err) {
     console.error('[strategist]', err);
-    return res.status(500).json({ ok: false, error: err.message });
+    sseWrite(res, { type: 'error', message: err.message || String(err) });
+    res.end();
   }
-}
-
-function summarizeResult(result) {
-  if (!result) return null;
-  if (result.error) return `error: ${result.error}`;
-  if (result.campaigns) return `${result.campaigns.length} campaigns`;
-  if (result.events) return `${result.events.length} storm events`;
-  if (result.results) return `${result.results.length} results${result.answer ? ' + answer' : ''}`;
-  if (result.campaign) return `campaign #${result.campaign.id}`;
-  if (result.content) return `${result.content.length} chars`;
-  return 'ok';
 }
