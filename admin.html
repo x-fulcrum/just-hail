@@ -2348,8 +2348,13 @@ async function renderFc() {
     },
   }).addTo(fcState.map);
 
-  // Keep campaigns visible above SPC layer
-  if (fcState.campaignLayer) fcState.campaignLayer.bringToFront();
+  // Keep campaigns visible above SPC layer — L.layerGroup() has no
+  // bringToFront() of its own, so walk its children.
+  if (fcState.campaignLayer) {
+    fcState.campaignLayer.eachLayer((child) => {
+      if (typeof child.bringToFront === 'function') child.bringToFront();
+    });
+  }
 
   // Summary: show tiers + issue time
   const tiers = features.map((f) => {
