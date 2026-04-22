@@ -1828,9 +1828,12 @@ function showGate() {
   setTimeout(() => gatePass.focus(), 50);
 }
 
-// Check saved session
+// Check saved session — deferred to next tick so all top-level `let`/`const`
+// declarations further down in this script finish initializing before init()
+// runs. (Otherwise init() → loadAndRender() → fetchLeads() hits the TDZ on
+// let fetchInFlight, and our new initHailForecast() hits it on const fcState.)
 if (sessionStorage.getItem(SESSION_KEY) === ADMIN_KEY) {
-  showApp();
+  setTimeout(showApp, 0);
 }
 
 gateForm.addEventListener('submit', (e) => {
