@@ -2209,12 +2209,13 @@ function init() {
 // =========================================================
 (function noop_fc() { /* kept below as initHailForecast */ })();
 
-const SPC_BASE = 'https://www.spc.noaa.gov/products/outlook';
+const SPC_OUTLOOK = 'https://www.spc.noaa.gov/products/outlook';
+const SPC_EXPER   = 'https://www.spc.noaa.gov/products/exper';
 function spcUrl(day, kind) {
   day = Number(day);
-  if (day === 1 || day === 2) return kind === 'hail' ? `${SPC_BASE}/day${day}otlk_hail.lyr.geojson` : `${SPC_BASE}/day${day}otlk_cat.lyr.geojson`;
-  if (day === 3)              return kind === 'prob' ? `${SPC_BASE}/day3otlk_prob.lyr.geojson` : `${SPC_BASE}/day3otlk_cat.lyr.geojson`;
-  if (day >= 4 && day <= 8)   return `${SPC_BASE}/exper/day4-8/day${day}prob.lyr.geojson`;
+  if (day === 1 || day === 2) return kind === 'hail' ? `${SPC_OUTLOOK}/day${day}otlk_hail.lyr.geojson` : `${SPC_OUTLOOK}/day${day}otlk_cat.lyr.geojson`;
+  if (day === 3)              return kind === 'prob' ? `${SPC_OUTLOOK}/day3otlk_prob.lyr.geojson` : `${SPC_OUTLOOK}/day3otlk_cat.lyr.geojson`;
+  if (day >= 4 && day <= 8)   return `${SPC_EXPER}/day4-8/day${day}prob.lyr.geojson`;
   throw new Error('bad day');
 }
 

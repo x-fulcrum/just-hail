@@ -22,7 +22,7 @@ import {
   tavilySearch, exaSearch, exaSocialSearch, jinaRead,
   perplexityResearch, nominatimSearch, nominatimReverse, nwsActiveAlerts,
 } from '../../lib/research.js';
-import { getStormData, getSwathPolygons, getImpactedPlaces } from '../../lib/ihm-web.js';
+import { getStormData, getSwathPolygons } from '../../lib/ihm-web.js';
 import { getSpcOutlookSummary, getSpcMultiDayOutlook } from '../../lib/spc.js';
 
 const client = new Anthropic();
@@ -40,9 +40,8 @@ YOUR MISSION: Help Charlie replace his entire traditional sales team by making s
 TOOLS — USE THEM AGGRESSIVELY AND IN PARALLEL WHEN POSSIBLE:
 
 Hail + storm data (past + present):
-- fetch_ihm_swath_polygons : get the actual storm swath polygons for a date (with size tiers)
-- fetch_ihm_storms         : individual hail pins for a date + bounding box
-- fetch_ihm_impacted_places: zip/city-level counts of impacted places for a date (GOOD first call to scope a storm)
+- fetch_ihm_swath_polygons : get the actual storm swath polygons for a date (with size tiers) — BEST first call to scope a storm
+- fetch_ihm_storms         : individual hail pins for a date + bounding box (defaults to CONUS)
 - get_recent_storms        : storms that hit our IHM webhook
 - nws_active_alerts        : National Weather Service live alerts (by state)
 
@@ -78,7 +77,7 @@ HOW TO REASON:
 8. CRM schema:
    - campaigns: id, name, status, target_input.polygon, property_hits, contact_hits, created_at
    - leads: id, campaign_id, first_name, last_name, email, phone, mobile, street, city, state, zip
-   - drafts: id, lead_id, channel (email/sms), status (pending/approved/sent/failed/rejected), subject, body, created_at, sent_at
+   - lead_outreach_drafts: id, created_at, lead_id, campaign_id, channel (email/sms), subject, body, model, approved (bool), sent_at, sent_status. Query via query_drafts — derives status (pending/approved/sent/failed) from approved + sent_at + sent_status.
    - storm_events: id, received_at, event_type, swath_size_in, city, state, zip, lat, lng
 `.trim();
 
@@ -94,16 +93,12 @@ const TOOLS = [
       showObserved: { type: 'boolean', description: 'Include confirmed-report swaths (default false = radar only)' },
     }}},
   { name: 'fetch_ihm_storms',
-    description: 'Individual hail-impact pins from IHM for a date + viewport. Each pin has Lat/Long/Size/Comments.',
+    description: 'Individual hail-impact pins from IHM for a date + viewport. Each pin has Lat/Long/Size/Comments. Viewport (neLat/neLng/swLat/swLng) is REQUIRED by IHM — if omitted we default to CONUS-wide.',
     input_schema: { type: 'object', required: ['begin'], properties: {
-      begin: { type: 'string' }, end: { type: 'string' },
+      begin: { type: 'string', description: 'M/D/YYYY' },
+      end:   { type: 'string', description: 'M/D/YYYY (defaults to begin)' },
       neLat: { type: 'number' }, neLng: { type: 'number' },
       swLat: { type: 'number' }, swLng: { type: 'number' },
-    }}},
-  { name: 'fetch_ihm_impacted_places',
-    description: 'Quick list of zips/cities with hail activity on a date. GREAT as a first call to scope "where did hail hit today" before pulling detailed pins or polygons.',
-    input_schema: { type: 'object', required: ['date'], properties: {
-      date: { type: 'string', description: 'M/D/YYYY' },
     }}},
   { name: 'get_recent_storms',
     description: "Storm events that hit Just Hail's webhook endpoint from IHM alerts.",
@@ -147,10 +142,10 @@ const TOOLS = [
       limit:       { type: 'integer', default: 50, maximum: 200 },
     }}},
   { name: 'query_drafts',
-    description: 'Search the drafts table. Drafts are Claude-written email/SMS per-lead. Filter by status, channel, campaign.',
+    description: 'Search the lead_outreach_drafts table. Drafts are Claude-written email/SMS per-lead. Filter by status (pending/approved/sent/failed), channel, or campaign.',
     input_schema: { type: 'object', properties: {
       campaign_id: { type: 'integer' },
-      status:      { type: 'string', enum: ['pending','approved','sent','failed','rejected'] },
+      status:      { type: 'string', enum: ['pending','approved','sent','failed'], description: 'pending=not yet approved, approved=approved but not sent, sent=delivered, failed=send attempt failed' },
       channel:     { type: 'string', enum: ['email','sms'] },
       since_days:  { type: 'integer', description: 'Only drafts created in the last N days' },
       limit:       { type: 'integer', default: 50, maximum: 200 },
@@ -222,20 +217,26 @@ async function runTool(name, input) {
         return { count: data.length, polygons: summarized };
       }
       case 'fetch_ihm_storms': {
-        const data = await getStormData(input);
+        // IHM's /Api/StormData requires all four bbox params — supply a
+        // CONUS-wide default when the caller omits them.
+        const args = {
+          begin: input.begin,
+          end:   input.end || input.begin,
+          neLat: input.neLat ?? 50,
+          neLng: input.neLng ?? -65,
+          swLat: input.swLat ?? 24,
+          swLng: input.swLng ?? -125,
+        };
+        const data = await getStormData(args);
         const arr = Array.isArray(data) ? data : [];
         return {
           count: arr.length,
+          bbox: { neLat: args.neLat, neLng: args.neLng, swLat: args.swLat, swLng: args.swLng },
           pins: arr.slice(0, 30).map((p) => ({
             lat: p.Lat, lng: p.Long, size_in: p.Size, heat: p.Heat,
             comments: String(p.Comments || '').replace(/<br\s*\/?>/gi, ' ').slice(0, 160),
           })),
         };
-      }
-      case 'fetch_ihm_impacted_places': {
-        const data = await getImpactedPlaces({ date: input.date });
-        const arr = Array.isArray(data) ? data : (Array.isArray(data?.Places) ? data.Places : []);
-        return { count: arr.length, places: arr.slice(0, 50) };
       }
       case 'get_recent_storms': {
         const days = Math.min(parseInt(input.days || 14, 10), 90);
@@ -306,27 +307,47 @@ async function runTool(name, input) {
         return { count: data?.length || 0, leads: data || [] };
       }
       case 'query_drafts': {
-        let q = supabase.from('drafts').select('id, lead_id, channel, status, subject, body, created_at, sent_at').order('created_at', { ascending: false }).limit(Math.min(input.limit || 50, 200));
-        if (input.campaign_id) {
-          // drafts are joined via lead_id — filter by subquery
-          const { data: leadIds } = await supabase.from('leads').select('id').eq('campaign_id', input.campaign_id).limit(5000);
-          const ids = (leadIds || []).map((r) => r.id);
-          if (!ids.length) return { count: 0, drafts: [] };
-          q = q.in('lead_id', ids);
-        }
-        if (input.status)  q = q.eq('status',  input.status);
-        if (input.channel) q = q.eq('channel', input.channel);
+        // Real table: lead_outreach_drafts
+        // Columns: id, created_at, lead_id, campaign_id, channel, subject, body,
+        //          model, approved, sent_at, sent_status, sent_provider_id.
+        // No single `status` column — we derive it from approved + sent_at + sent_status.
+        let q = supabase
+          .from('lead_outreach_drafts')
+          .select('id, created_at, lead_id, campaign_id, channel, subject, body, model, approved, sent_at, sent_status')
+          .order('created_at', { ascending: false })
+          .limit(Math.min(input.limit || 50, 200));
+        if (input.campaign_id) q = q.eq('campaign_id', input.campaign_id);
+        if (input.channel)     q = q.eq('channel', input.channel);
         if (input.since_days) {
           const cutoff = new Date(Date.now() - input.since_days * 86400000).toISOString();
           q = q.gte('created_at', cutoff);
         }
+        // Derived status filters map to (approved, sent_at, sent_status) combos.
+        if (input.status === 'pending')  q = q.eq('approved', false).is('sent_at', null);
+        if (input.status === 'approved') q = q.eq('approved', true ).is('sent_at', null);
+        if (input.status === 'sent')     q = q.not('sent_at', 'is', null).neq('sent_status', 'failed');
+        if (input.status === 'failed')   q = q.eq('sent_status', 'failed');
+
         const { data, error } = await q;
         if (error) return { error: error.message };
         return {
           count: data?.length || 0,
           drafts: (data || []).map((d) => ({
-            ...d,
+            id: d.id,
+            created_at: d.created_at,
+            lead_id: d.lead_id,
+            campaign_id: d.campaign_id,
+            channel: d.channel,
+            subject: d.subject,
             body: (d.body || '').slice(0, 400),
+            model: d.model,
+            approved: d.approved,
+            sent_at: d.sent_at,
+            sent_status: d.sent_status,
+            derived_status: d.sent_status === 'failed' ? 'failed'
+                          : d.sent_at ? 'sent'
+                          : d.approved ? 'approved'
+                          : 'pending',
           })),
         };
       }
