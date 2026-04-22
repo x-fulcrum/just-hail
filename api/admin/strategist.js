@@ -4,13 +4,7 @@
 //
 // Body: {
 //   messages: [{role, content}, ...],
-//   settings?: {
-//     maxTokens?: number        (default 8192, max 32000)
-//     useThinking?: boolean     (extended thinking mode — slower, deeper)
-//     thinkingBudget?: number   (default 4000, max 16000)
-//     temperature?: number      (default 0.4)
-//     reasoningLevel?: 'fast'|'deep'  (convenience toggle)
-//   }
+//   settings?: { maxTokens?: number }   // default 16000, max 64000
 // }
 //
 // Stream protocol (one JSON object per SSE `data:` line):
@@ -401,11 +395,8 @@ export default async function handler(req, res) {
   if (!inputMessages.length) return res.status(400).json({ error: 'messages[] required' });
 
   const s = body.settings || {};
-  const maxTokens      = Math.min(Math.max(parseInt(s.maxTokens || 8192, 10), 1024), 32000);
-  const useThinking    = !!s.useThinking;
-  const thinkingBudget = Math.min(Math.max(parseInt(s.thinkingBudget || 4000, 10), 1024), 16000);
-  // NOTE: Claude Opus 4.7 has deprecated `temperature` — intentionally not
-  // forwarded even if the client sends one.
+  const maxTokens = Math.min(Math.max(parseInt(s.maxTokens || 16000, 10), 1024), 64000);
+  // NOTE: Claude Opus 4.7 deprecated `temperature` — not forwarded even if sent.
 
   // Set up SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -421,25 +412,17 @@ export default async function handler(req, res) {
 
   try {
     for (let iter = 0; iter < MAX_ITER; iter++) {
-      const streamParams = {
+      const stream = client.messages.stream({
         model: 'claude-opus-4-7',
         max_tokens: maxTokens,
         system: SYSTEM_PROMPT,
         tools: TOOLS,
         messages,
-      };
-      if (useThinking) {
-        streamParams.thinking = { type: 'enabled', budget_tokens: thinkingBudget };
-      }
+      });
 
-      const stream = client.messages.stream(streamParams);
-
-      // Forward deltas to the client as they arrive
+      // Forward text deltas to the client as they arrive
       stream.on('text', (delta) => {
         sseWrite(res, { type: 'text_delta', text: delta });
-      });
-      stream.on('thinking', (delta) => {
-        sseWrite(res, { type: 'thinking_delta', text: delta });
       });
 
       const finalMsg = await stream.finalMessage();

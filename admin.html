@@ -363,24 +363,12 @@
       <button id="stratCloseBtn" type="button" title="Close">×</button>
     </header>
     <div id="stratSettings" style="display: none; padding: 14px 18px; border-bottom: 1px solid var(--hair); background: var(--surface-2); font-size: 11px;">
-      <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; align-items: center;">
-        <label for="stratReasoning" style="color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;">Reasoning</label>
-        <select id="stratReasoning" style="width: auto; padding: 4px 8px; font-size: 11px;">
-          <option value="fast">Fast (no extended thinking)</option>
-          <option value="deep">Deep (extended thinking)</option>
-        </select>
-        <label for="stratMaxTokens" style="color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;">Max tokens / turn</label>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <input id="stratMaxTokens" type="range" min="2048" max="32000" step="1024" value="8192" style="width: 140px; accent-color: var(--accent);" />
-          <span id="stratMaxTokensVal" class="mono" style="min-width: 52px; text-align: right;">8192</span>
-        </div>
-        <label for="stratThinkingBudget" style="color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em;">Thinking budget</label>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <input id="stratThinkingBudget" type="range" min="1024" max="16000" step="512" value="4000" style="width: 140px; accent-color: var(--accent);" />
-          <span id="stratThinkingBudgetVal" class="mono" style="min-width: 52px; text-align: right;">4000</span>
-        </div>
+      <label for="stratMaxTokens" style="display: block; color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Output tokens / turn</label>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <input id="stratMaxTokens" type="range" min="2048" max="64000" step="2048" value="16000" style="flex: 1; accent-color: var(--accent);" />
+        <span id="stratMaxTokensVal" class="mono" style="min-width: 56px; text-align: right;">16000</span>
       </div>
-      <div class="dim" style="margin-top: 8px; font-size: 10px; line-height: 1.4;">Deep reasoning = Claude thinks before answering (up to 16k tokens of reasoning, slower). Higher max tokens = longer replies. Settings persist per session.</div>
+      <div class="dim" style="margin-top: 8px; font-size: 10px; line-height: 1.4;">Max output tokens per turn, up to 64k (Claude Opus 4.7 ceiling). Higher = longer replies + deeper analysis, at the cost of latency and token spend. Setting persists per session.</div>
     </div>
     <div id="stratBody">
       <div id="stratWelcome">
@@ -2184,11 +2172,8 @@ function init() {
   const clearBtn  = document.getElementById('stratClearBtn');
   const settingsBtn   = document.getElementById('stratSettingsBtn');
   const settingsPanel = document.getElementById('stratSettings');
-  const reasoningSel  = document.getElementById('stratReasoning');
   const maxTokensIn   = document.getElementById('stratMaxTokens');
   const maxTokensVal  = document.getElementById('stratMaxTokensVal');
-  const thinkBudgetIn = document.getElementById('stratThinkingBudget');
-  const thinkBudgetVal= document.getElementById('stratThinkingBudgetVal');
   const body      = document.getElementById('stratBody');
   const welcome   = document.getElementById('stratWelcome');
   const messages  = document.getElementById('stratMessages');
@@ -2205,25 +2190,21 @@ function init() {
 
   // --- settings (persisted in sessionStorage) ---
   const SETTINGS_KEY = 'jh-strat-settings';
-  let settings = { reasoning: 'fast', maxTokens: 8192, thinkingBudget: 4000 };
+  let settings = { maxTokens: 16000 };
   try { Object.assign(settings, JSON.parse(sessionStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
-  reasoningSel.value  = settings.reasoning;
-  maxTokensIn.value   = settings.maxTokens;
+  // Clamp legacy values from older builds into the new [2048, 64000] range.
+  settings.maxTokens = Math.min(Math.max(parseInt(settings.maxTokens, 10) || 16000, 2048), 64000);
+  maxTokensIn.value = settings.maxTokens;
   maxTokensVal.textContent = settings.maxTokens;
-  thinkBudgetIn.value = settings.thinkingBudget;
-  thinkBudgetVal.textContent = settings.thinkingBudget;
 
   function saveSettings() {
-    settings = {
-      reasoning: reasoningSel.value,
-      maxTokens: parseInt(maxTokensIn.value, 10),
-      thinkingBudget: parseInt(thinkBudgetIn.value, 10),
-    };
+    settings = { maxTokens: parseInt(maxTokensIn.value, 10) };
     sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }
-  reasoningSel.addEventListener('change', saveSettings);
-  maxTokensIn.addEventListener('input', () => { maxTokensVal.textContent = maxTokensIn.value; saveSettings(); });
-  thinkBudgetIn.addEventListener('input', () => { thinkBudgetVal.textContent = thinkBudgetIn.value; saveSettings(); });
+  maxTokensIn.addEventListener('input', () => {
+    maxTokensVal.textContent = maxTokensIn.value;
+    saveSettings();
+  });
   settingsBtn.addEventListener('click', () => {
     settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
   });
@@ -2363,11 +2344,7 @@ function init() {
 
     const requestBody = {
       messages: history,
-      settings: {
-        maxTokens: settings.maxTokens,
-        useThinking: settings.reasoning === 'deep',
-        thinkingBudget: settings.thinkingBudget,
-      },
+      settings: { maxTokens: settings.maxTokens },
     };
 
     try {
@@ -2411,10 +2388,6 @@ function init() {
             streamedText += evt.text || '';
             bubble.innerHTML = renderAssistantText(streamedText);
             scrollToBottom();
-            break;
-          }
-          case 'thinking_delta': {
-            thinkingInd.innerHTML = `<span class="spin"></span> Thinking · ${escapeHtml((evt.text || '').slice(-80))}`;
             break;
           }
           case 'tool_start': {
