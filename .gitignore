@@ -12,3 +12,11 @@ jh/
 # Dev/scratch artifacts from the design iteration (not referenced at runtime)
 uploads/
 screenshots/
+
+# Playwright MCP test artifacts (console logs, snapshots, screenshots from dev verification)
+.playwright-mcp/
+/admin-*.png
+/slider-*.png
+/swath-*.png
+/ihm-*.png
+/map-*.png
