@@ -197,6 +197,42 @@
         <div id="ihmImportStatus" class="mono" style="font-size: 11px; margin-top: 12px; min-height: 16px;"></div>
       </div>
 
+      <!-- IHM Session Manager (collapsed by default, expand when API breaks) -->
+      <details class="card" style="padding: 14px 20px; margin-bottom: 20px; background: var(--surface-2); border: 1px dashed var(--hair-strong);">
+        <summary style="cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+          <div>
+            <div class="eyebrow">· IHM session manager</div>
+            <div style="margin-top: 4px; font-size: 13px;" class="dim">Refresh cookies when IHM pulls start failing. <span id="ihmSessionStatusLabel" class="mono" style="font-size: 11px; color: var(--ink-dim);">checking…</span></div>
+          </div>
+          <button type="button" class="btn btn-ghost" id="ihmSessionTestBtn" style="font-size: 11px; padding: 6px 12px;">Test session</button>
+        </summary>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hair);">
+          <div class="mono dim" style="font-size: 11px; margin-bottom: 14px; line-height: 1.55;">
+            In Chrome on maps.interactivehailmaps.com: DevTools → Application → Cookies → <span class="mono" style="color: var(--ink);">https://maps.interactivehailmaps.com</span>. Copy each value into the matching field below. Only need to refresh the ones that look expired — empty fields keep the stored value.
+          </div>
+          <form id="ihmSessionForm" autocomplete="off">
+            <div style="display: grid; grid-template-columns: 140px 1fr; gap: 10px 14px; align-items: center;">
+              <label for="ihmCookieIhm" class="mono dim" style="font-size: 11px;">ihm</label>
+              <input id="ihmCookieIhm" type="text" placeholder="st=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="font-family: var(--font-mono); font-size: 11px;" />
+              <label for="ihmCookieSession" class="mono dim" style="font-size: 11px;">ASP.NET_SessionId</label>
+              <input id="ihmCookieSession" type="text" placeholder="e.g. 5mapqmtz4x1xvpzomvsk0ea0" style="font-family: var(--font-mono); font-size: 11px;" />
+              <label for="ihmCookieCf" class="mono dim" style="font-size: 11px;">cf_clearance</label>
+              <input id="ihmCookieCf" type="text" placeholder="long Cloudflare token" style="font-family: var(--font-mono); font-size: 11px;" />
+              <label for="ihmCookieEmail" class="mono dim" style="font-size: 11px;">email</label>
+              <input id="ihmCookieEmail" type="text" placeholder="info.justhail@gmail.com" style="font-family: var(--font-mono); font-size: 11px;" />
+              <label for="ihmCookieExtra" class="mono dim" style="font-size: 11px;">other cookies</label>
+              <input id="ihmCookieExtra" type="text" placeholder="optional: name=val; name2=val2" style="font-family: var(--font-mono); font-size: 11px;" />
+              <label for="ihmCookiePass" class="mono dim" style="font-size: 11px;">refresh password</label>
+              <input id="ihmCookiePass" type="password" placeholder="1234" maxlength="8" style="font-family: var(--font-mono); font-size: 11px; max-width: 140px;" />
+            </div>
+            <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
+              <button type="submit" class="btn" id="ihmSessionSaveBtn" style="font-size: 12px; padding: 8px 16px;">Save cookies →</button>
+              <div id="ihmSessionSaveStatus" class="mono" style="font-size: 11px; min-height: 16px;"></div>
+            </div>
+          </form>
+        </div>
+      </details>
+
       <!-- Campaign list -->
       <div class="card" style="padding: 0; overflow: hidden;">
         <table id="campTable">
@@ -2202,6 +2238,111 @@ function init() {
     }, 45000);
   });
   initHailForecast();
+  initIhmSessionManager();
+}
+
+// =========================================================
+// IHM SESSION MANAGER — 5 cookie fields, 1234-gated save,
+// server-side test button. Cookies persist in Supabase so
+// refresh doesn't require a redeploy.
+// =========================================================
+function initIhmSessionManager() {
+  const statusLbl = document.getElementById('ihmSessionStatusLabel');
+  const testBtn   = document.getElementById('ihmSessionTestBtn');
+  const form      = document.getElementById('ihmSessionForm');
+  const saveBtn   = document.getElementById('ihmSessionSaveBtn');
+  const saveStat  = document.getElementById('ihmSessionSaveStatus');
+  if (!form) return;
+
+  const fields = {
+    ihm:            document.getElementById('ihmCookieIhm'),
+    aspnet_session: document.getElementById('ihmCookieSession'),
+    cf_clearance:   document.getElementById('ihmCookieCf'),
+    email:          document.getElementById('ihmCookieEmail'),
+    extra:          document.getElementById('ihmCookieExtra'),
+  };
+  const passInput = document.getElementById('ihmCookiePass');
+
+  async function refreshStatus() {
+    try {
+      const res = await fetch('/api/admin/ihm-session');
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'status fetch failed');
+      const s = data.status || {};
+      if (!s.exists) {
+        statusLbl.textContent = 'no cookies stored yet';
+        statusLbl.style.color = 'var(--amber)';
+        return;
+      }
+      const filled = Object.entries(s.slots || {}).filter(([, v]) => v).map(([k]) => k);
+      const ageMin = s.updated_at ? Math.floor((Date.now() - new Date(s.updated_at)) / 60000) : null;
+      const ageStr = ageMin == null ? '—' : ageMin < 60 ? `${ageMin}m ago` : ageMin < 24*60 ? `${Math.floor(ageMin/60)}h ago` : `${Math.floor(ageMin/1440)}d ago`;
+      const testLabel = s.last_test_ok === true ? '✓ tested ok' : s.last_test_ok === false ? '✗ test failed' : 'not tested';
+      const color = s.last_test_ok === true ? 'var(--green)' : s.last_test_ok === false ? 'var(--accent)' : 'var(--ink-dim)';
+      statusLbl.innerHTML = `<span style="color:${color};">${testLabel}</span> · ${filled.length}/5 slots filled · updated ${ageStr}`;
+    } catch (err) {
+      statusLbl.textContent = 'status unavailable';
+      statusLbl.style.color = 'var(--amber)';
+    }
+  }
+
+  testBtn?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();  // don't toggle the <details> open/closed
+    testBtn.disabled = true;
+    const prev = testBtn.textContent;
+    testBtn.textContent = 'Testing…';
+    try {
+      const res = await fetch('/api/admin/ihm-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test' }),
+      });
+      await res.json();
+    } catch {}
+    testBtn.textContent = prev;
+    testBtn.disabled = false;
+    refreshStatus();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    saveStat.textContent = 'saving…';
+    saveStat.style.color = 'var(--ink-dim)';
+    saveBtn.disabled = true;
+    const cookies = {};
+    for (const [k, el] of Object.entries(fields)) {
+      const v = el.value.trim();
+      if (v) cookies[k] = v;
+    }
+    if (Object.keys(cookies).length === 0) {
+      saveStat.textContent = 'Fill at least one cookie field.';
+      saveStat.style.color = 'var(--amber)';
+      saveBtn.disabled = false;
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/ihm-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passInput.value, cookies }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      saveStat.textContent = '✓ Saved. Clearing inputs…';
+      saveStat.style.color = 'var(--green)';
+      for (const el of Object.values(fields)) el.value = '';
+      passInput.value = '';
+      refreshStatus();
+    } catch (err) {
+      saveStat.textContent = '✗ ' + (err.message || String(err));
+      saveStat.style.color = 'var(--accent)';
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  refreshStatus();
 }
 
 // =========================================================
