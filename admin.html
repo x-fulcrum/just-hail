@@ -365,7 +365,7 @@
     <div id="stratSettings" style="display: none; padding: 14px 18px; border-bottom: 1px solid var(--hair); background: var(--surface-2); font-size: 11px;">
       <label for="stratMaxTokens" style="display: block; color: var(--ink-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Output tokens / turn</label>
       <div style="display: flex; align-items: center; gap: 10px;">
-        <input id="stratMaxTokens" type="range" min="2048" max="64000" step="1024" value="16000" style="flex: 1; accent-color: var(--accent);" />
+        <input id="stratMaxTokens" type="range" min="2000" max="64000" step="1000" value="16000" style="flex: 1; accent-color: var(--accent);" />
         <span id="stratMaxTokensVal" class="mono" style="min-width: 56px; text-align: right;">16000</span>
       </div>
       <div class="dim" style="margin-top: 8px; font-size: 10px; line-height: 1.4;">Max output tokens per turn, up to 64k (Claude Opus 4.7 ceiling). Higher = longer replies + deeper analysis, at the cost of latency and token spend. Setting persists per session.</div>
@@ -2192,8 +2192,8 @@ function init() {
   const SETTINGS_KEY = 'jh-strat-settings';
   let settings = { maxTokens: 16000 };
   try { Object.assign(settings, JSON.parse(sessionStorage.getItem(SETTINGS_KEY) || '{}')); } catch {}
-  // Clamp legacy values from older builds into the new [2048, 64000] range.
-  settings.maxTokens = Math.min(Math.max(parseInt(settings.maxTokens, 10) || 16000, 2048), 64000);
+  // Clamp legacy values into the [2000, 64000] range.
+  settings.maxTokens = Math.min(Math.max(parseInt(settings.maxTokens, 10) || 16000, 2000), 64000);
   maxTokensIn.value = settings.maxTokens;
   maxTokensVal.textContent = settings.maxTokens;
 
