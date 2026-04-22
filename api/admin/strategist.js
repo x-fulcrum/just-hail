@@ -23,6 +23,7 @@ import {
   perplexityResearch, nominatimSearch, nominatimReverse, nwsActiveAlerts,
 } from '../../lib/research.js';
 import { getStormData, getSwathPolygons, getImpactedPlaces } from '../../lib/ihm-web.js';
+import { getSpcOutlookSummary, getSpcMultiDayOutlook } from '../../lib/spc.js';
 
 const client = new Anthropic();
 
@@ -38,12 +39,15 @@ YOUR MISSION: Help Charlie replace his entire traditional sales team by making s
 
 TOOLS — USE THEM AGGRESSIVELY AND IN PARALLEL WHEN POSSIBLE:
 
-Hail + storm data:
+Hail + storm data (past + present):
 - fetch_ihm_swath_polygons : get the actual storm swath polygons for a date (with size tiers)
 - fetch_ihm_storms         : individual hail pins for a date + bounding box
 - fetch_ihm_impacted_places: zip/city-level counts of impacted places for a date (GOOD first call to scope a storm)
 - get_recent_storms        : storms that hit our IHM webhook
 - nws_active_alerts        : National Weather Service live alerts (by state)
+
+Hail FORECAST (future — what's coming):
+- get_hail_outlook         : NOAA Storm Prediction Center convective outlook, Day 1 (today) through Day 8. Always use this when Charlie asks about FUTURE hail risk, upcoming storms, or where to position for the next event. Day 1-2 have hail-specific probability; Day 3+ have categorical/severe-probability.
 
 Just Hail's CRM state:
 - search_our_campaigns     : what polygons Charlie has already pulled
@@ -110,6 +114,13 @@ const TOOLS = [
       state: { type: 'string', description: '2-letter state abbrev (TX, OK, etc.)' },
       event: { type: 'string', description: 'Event type filter (e.g. "Severe Thunderstorm Warning")' },
       severity: { type: 'string', enum: ['Extreme','Severe','Moderate','Minor','Unknown'] },
+    }}},
+  { name: 'get_hail_outlook',
+    description: 'NOAA Storm Prediction Center (SPC) convective outlook for Day 1-8. FORECAST DATA — use when Charlie asks about TODAY or FUTURE hail risk anywhere in the US. Day 1=today, Day 2=tomorrow, ..., Day 8=a week out. Day 1 & 2 have both categorical risk AND hail-specific probability; Day 3 has categorical + general severe probability; Day 4-8 are general severe probability only. Returns tier labels, colors, bbox, centroid for each risk zone.',
+    input_schema: { type: 'object', properties: {
+      day:  { type: 'integer', description: '1-8. Omit to get Days 1-3 at once.' },
+      days: { type: 'array', items: { type: 'integer' }, description: 'Array of days (e.g. [1,2,3,4,5]) — ignored if `day` is provided.' },
+      kind: { type: 'string', enum: ['cat','hail','prob'], description: "cat=categorical risk (default, all days); hail=hail-specific probability (Day 1-2 only); prob=general severe probability (Day 3+)." },
     }}},
 
   // ---- Our CRM ----
@@ -234,6 +245,14 @@ async function runTool(name, input) {
       }
       case 'nws_active_alerts': {
         return { alerts: await nwsActiveAlerts(input) };
+      }
+      case 'get_hail_outlook': {
+        const kind = input.kind || 'cat';
+        if (input.day) {
+          return await getSpcOutlookSummary(input.day, kind);
+        }
+        const days = Array.isArray(input.days) && input.days.length ? input.days : [1, 2, 3];
+        return { outlooks: await getSpcMultiDayOutlook({ days, kind }) };
       }
 
       case 'search_our_campaigns': {

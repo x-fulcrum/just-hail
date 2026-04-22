@@ -221,6 +221,44 @@
       </div>
     </section>
 
+    <!-- ================ HAIL FORECAST (NOAA SPC) ================ -->
+    <section id="forecast" style="margin-bottom: 64px;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <div class="eyebrow" style="color: var(--accent);">· Hail Forecast</div>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Where is it coming?</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">NOAA Storm Prediction Center convective outlooks. Day 1 = today, Day 8 = a week out. Updated several times per day by SPC forecasters in Norman, OK.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <div id="fcLayerToggle" style="display: flex; gap: 0; border: 1px solid var(--hair-strong); border-radius: 2px; overflow: hidden;">
+            <button class="fc-layer-btn" data-kind="cat" style="padding: 6px 12px; font-size: 11px; background: var(--accent); color: #0a0b10; border: none; font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;">Categorical</button>
+            <button class="fc-layer-btn" data-kind="hail" style="padding: 6px 12px; font-size: 11px; background: transparent; color: var(--ink-dim); border: none; border-left: 1px solid var(--hair-strong); font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;">Hail %</button>
+          </div>
+          <button class="btn btn-ghost" id="fcRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Day picker -->
+      <div id="fcDayPicker" style="display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;">
+        <!-- buttons injected by JS: Day 1 today, Day 2 tomorrow, ... Day 8 -->
+      </div>
+
+      <!-- Outlook summary strip -->
+      <div id="fcSummary" class="card mono" style="padding: 14px 20px; margin-bottom: 16px; font-size: 11px; color: var(--ink-dim); min-height: 44px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+        Loading outlook…
+      </div>
+
+      <!-- Map -->
+      <div class="card" style="padding: 0; overflow: hidden; position: relative;">
+        <div id="fcMap" style="height: 520px; background: var(--surface-2);"></div>
+      </div>
+
+      <div style="margin-top: 12px; display: flex; justify-content: space-between; font-size: 11px;" class="mono dim">
+        <div>Source: <a href="https://www.spc.noaa.gov/" target="_blank" rel="noopener" style="color: var(--ink-dim);">spc.noaa.gov</a> · Day 1-2 hail-specific layer available when issued · Day 4-8 are severe-probability only</div>
+        <div>Updated <span id="fcUpdated">—</span></div>
+      </div>
+    </section>
+
     <!-- ================ STORM COMMAND CENTER ================ -->
     <section id="cmd" style="margin-bottom: 64px;">
       <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
@@ -2160,6 +2198,176 @@ function init() {
       loadAndRender().then(() => { lastSync.dataset.t = Date.now(); });
     }, 45000);
   });
+  initHailForecast();
+}
+
+// =========================================================
+// HAIL FORECAST (NOAA SPC) — Day 1-8 convective outlooks
+// =========================================================
+(function noop_fc() { /* kept below as initHailForecast */ })();
+
+const SPC_BASE = 'https://www.spc.noaa.gov/products/outlook';
+function spcUrl(day, kind) {
+  day = Number(day);
+  if (day === 1 || day === 2) return kind === 'hail' ? `${SPC_BASE}/day${day}otlk_hail.lyr.geojson` : `${SPC_BASE}/day${day}otlk_cat.lyr.geojson`;
+  if (day === 3)              return kind === 'prob' ? `${SPC_BASE}/day3otlk_prob.lyr.geojson` : `${SPC_BASE}/day3otlk_cat.lyr.geojson`;
+  if (day >= 4 && day <= 8)   return `${SPC_BASE}/exper/day4-8/day${day}prob.lyr.geojson`;
+  throw new Error('bad day');
+}
+
+const fcState = { day: 1, kind: 'cat', layer: null, campaignLayer: null, map: null };
+
+function initHailForecast() {
+  // Build day picker
+  const picker = document.getElementById('fcDayPicker');
+  if (!picker) return;
+  const dayLabels = { 1: 'Day 1 · Today', 2: 'Day 2', 3: 'Day 3', 4: 'Day 4', 5: 'Day 5', 6: 'Day 6', 7: 'Day 7', 8: 'Day 8' };
+  picker.innerHTML = '';
+  for (let d = 1; d <= 8; d++) {
+    const btn = document.createElement('button');
+    btn.className = 'fc-day-btn';
+    btn.dataset.day = String(d);
+    btn.textContent = dayLabels[d];
+    btn.style.cssText = `padding: 8px 14px; font-size: 11px; font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--hair-strong); border-radius: 2px; background: ${d === fcState.day ? 'var(--accent)' : 'var(--surface-2)'}; color: ${d === fcState.day ? '#0a0b10' : 'var(--ink)'}; cursor: pointer;`;
+    btn.addEventListener('click', () => { fcState.day = d; renderFc(); });
+    picker.appendChild(btn);
+  }
+
+  // Layer toggle
+  document.querySelectorAll('.fc-layer-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { fcState.kind = btn.dataset.kind; renderFc(); });
+  });
+  document.getElementById('fcRefreshBtn')?.addEventListener('click', renderFc);
+
+  // Wait for Leaflet + campaign data, then first render
+  initFcMap().then(renderFc);
+}
+
+async function initFcMap() {
+  await waitForLeaflet();
+  const host = document.getElementById('fcMap');
+  if (!host || fcState.map) return;
+  fcState.map = window.L.map(host, { zoomControl: true, attributionControl: false }).setView([39.5, -97.5], 4);
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(fcState.map);
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.55 }).addTo(fcState.map);
+  // Campaign overlay
+  try {
+    const res = await fetch('/api/admin/campaigns?limit=200');
+    const data = await res.json();
+    const campaigns = (data.campaigns || []).filter((c) => Array.isArray(c.target_input?.polygon) && c.target_input.polygon.length >= 3);
+    if (campaigns.length) {
+      fcState.campaignLayer = window.L.layerGroup();
+      for (const c of campaigns) {
+        const latlngs = c.target_input.polygon.map((p) => [p.lat, p.lng]);
+        window.L.polygon(latlngs, { color: '#ffffff', weight: 1.5, fillColor: '#ffffff', fillOpacity: 0.08, dashArray: '4 3' })
+          .bindTooltip(`#${c.id} · ${c.name}`, { permanent: false, direction: 'center' })
+          .addTo(fcState.campaignLayer);
+      }
+      fcState.campaignLayer.addTo(fcState.map);
+    }
+  } catch (err) { console.warn('[forecast] campaigns overlay failed:', err); }
+}
+
+function waitForLeaflet() {
+  return new Promise((resolve) => {
+    const check = () => window.L ? resolve() : setTimeout(check, 100);
+    check();
+  });
+}
+
+function updateDayPickerButtons() {
+  document.querySelectorAll('.fc-day-btn').forEach((btn) => {
+    const active = Number(btn.dataset.day) === fcState.day;
+    btn.style.background = active ? 'var(--accent)' : 'var(--surface-2)';
+    btn.style.color = active ? '#0a0b10' : 'var(--ink)';
+  });
+}
+function updateLayerButtons() {
+  document.querySelectorAll('.fc-layer-btn').forEach((btn) => {
+    const active = btn.dataset.kind === fcState.kind;
+    btn.style.background = active ? 'var(--accent)' : 'transparent';
+    btn.style.color = active ? '#0a0b10' : 'var(--ink-dim)';
+  });
+}
+
+async function renderFc() {
+  updateDayPickerButtons();
+  updateLayerButtons();
+  const summaryEl = document.getElementById('fcSummary');
+  const updatedEl = document.getElementById('fcUpdated');
+  if (!fcState.map) return;
+
+  // Gray out hail layer when not available (Day 3+)
+  const hailBtn = document.querySelector('.fc-layer-btn[data-kind="hail"]');
+  if (hailBtn) {
+    const available = fcState.day === 1 || fcState.day === 2;
+    hailBtn.disabled = !available;
+    hailBtn.style.opacity = available ? '1' : '0.4';
+    hailBtn.style.cursor = available ? 'pointer' : 'not-allowed';
+  }
+  // Auto-fallback to categorical if user has hail selected but it's unavailable
+  const effectiveKind = (fcState.kind === 'hail' && fcState.day >= 3) ? 'cat' : fcState.kind;
+
+  // Clear old layer
+  if (fcState.layer) { fcState.map.removeLayer(fcState.layer); fcState.layer = null; }
+  summaryEl.innerHTML = '<span class="spin"></span> &nbsp;Loading Day ' + fcState.day + ' · ' + effectiveKind + '…';
+
+  let geo;
+  try {
+    const res = await fetch(spcUrl(fcState.day, effectiveKind));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    geo = await res.json();
+  } catch (err) {
+    summaryEl.innerHTML = `<span style="color: var(--amber);">Couldn't load SPC outlook (${escapeHtml(err.message || String(err))}). Retry in a minute.</span>`;
+    return;
+  }
+
+  const features = geo?.features || [];
+  if (!features.length) {
+    summaryEl.innerHTML = `<span style="color: var(--ink-dim);">No ${effectiveKind === 'hail' ? 'hail probability' : 'risk'} area issued for Day ${fcState.day} right now. Come back after SPC's next update cycle (13Z, 16Z, 20Z, 01Z).</span>`;
+    return;
+  }
+
+  fcState.layer = window.L.geoJSON(geo, {
+    style: (f) => ({
+      color: f.properties?.stroke || '#888',
+      weight: 1.5,
+      fillColor: f.properties?.fill || '#888',
+      fillOpacity: 0.55,
+    }),
+    onEachFeature: (f, layer) => {
+      const p = f.properties || {};
+      layer.bindPopup(`<div style="color:#111;font-size:12px;line-height:1.5;">
+        <strong style="display:inline-block;padding:2px 8px;background:${p.fill || '#888'};color:#000;border-radius:2px;">${escapeHtml(p.LABEL2 || p.LABEL || 'Risk')}</strong>
+        <div style="margin-top:6px;">Valid ${fmtSpc(p.VALID_ISO)} – ${fmtSpc(p.EXPIRE_ISO)}</div>
+        ${p.FORECASTER ? `<div>Forecaster: ${escapeHtml(p.FORECASTER)}</div>` : ''}
+      </div>`);
+    },
+  }).addTo(fcState.map);
+
+  // Keep campaigns visible above SPC layer
+  if (fcState.campaignLayer) fcState.campaignLayer.bringToFront();
+
+  // Summary: show tiers + issue time
+  const tiers = features.map((f) => {
+    const p = f.properties || {};
+    return `<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid ${p.stroke || '#444'};border-radius:2px;"><span style="width:10px;height:10px;background:${p.fill || '#888'};display:inline-block;border:1px solid ${p.stroke || '#444'};"></span><span style="color:var(--ink);">${escapeHtml(p.LABEL2 || p.LABEL)}</span></span>`;
+  }).join(' ');
+  const issued = features[0]?.properties?.ISSUE_ISO;
+  const validTo = features[0]?.properties?.EXPIRE_ISO;
+  summaryEl.innerHTML = `
+    <span style="color: var(--ink); font-size: 12px;">Day ${fcState.day} · ${effectiveKind === 'hail' ? 'Hail probability' : effectiveKind === 'prob' ? 'Severe probability' : 'Categorical risk'}:</span>
+    ${tiers}
+    ${issued ? `<span style="margin-left: auto;">Issued ${fmtSpc(issued)} UTC</span>` : ''}
+    ${validTo ? `<span>· Valid thru ${fmtSpc(validTo)} UTC</span>` : ''}
+  `;
+  updatedEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtSpc(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toUTCString().split(' ').slice(1, 5).join(' ').replace(':00 GMT', '');
 }
 
 // =========================================================
