@@ -2301,16 +2301,29 @@ async function renderFc() {
   const updatedEl = document.getElementById('fcUpdated');
   if (!fcState.map) return;
 
-  // Gray out hail layer when not available (Day 3+)
+  // Gray out hail layer when not available (Day 3+). On Day 4-8 the toggle
+  // is irrelevant entirely (only severe-probability is issued) — dim both.
+  const catBtn  = document.querySelector('.fc-layer-btn[data-kind="cat"]');
   const hailBtn = document.querySelector('.fc-layer-btn[data-kind="hail"]');
+  const isDay4plus = fcState.day >= 4;
   if (hailBtn) {
-    const available = fcState.day === 1 || fcState.day === 2;
+    const available = fcState.day <= 2;
     hailBtn.disabled = !available;
     hailBtn.style.opacity = available ? '1' : '0.4';
     hailBtn.style.cursor = available ? 'pointer' : 'not-allowed';
   }
-  // Auto-fallback to categorical if user has hail selected but it's unavailable
-  const effectiveKind = (fcState.kind === 'hail' && fcState.day >= 3) ? 'cat' : fcState.kind;
+  if (catBtn) {
+    catBtn.disabled = isDay4plus;
+    catBtn.style.opacity = isDay4plus ? '0.4' : '1';
+    catBtn.style.cursor = isDay4plus ? 'not-allowed' : 'pointer';
+  }
+  // Resolve which layer kind we'll actually show:
+  //   - Day 1-2: honor the toggle (cat | hail)
+  //   - Day 3:   only cat exists as a "map" layer (prob is rarely issued)
+  //   - Day 4-8: only the probability layer exists — regardless of toggle
+  let effectiveKind = fcState.kind;
+  if (fcState.kind === 'hail' && fcState.day >= 3) effectiveKind = 'cat';
+  if (fcState.day >= 4) effectiveKind = 'prob';
 
   // Clear old layer
   if (fcState.layer) { fcState.map.removeLayer(fcState.layer); fcState.layer = null; }
