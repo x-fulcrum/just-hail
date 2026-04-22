@@ -1,0 +1,8 @@
+- generic [ref=e2]:
+  - generic [ref=e3]: · Just Hail · Staff only
+  - heading "Sign in" [level=1] [ref=e4]
+  - paragraph [ref=e5]: This dashboard is private. Enter the staff passcode to continue.
+  - generic [ref=e6]:
+    - textbox "Passcode" [active] [ref=e7]
+    - button "Access dashboard →" [ref=e8] [cursor=pointer]
+  - generic [ref=e9]: Forgot passcode? · Ask Charlie

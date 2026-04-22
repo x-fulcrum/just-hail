@@ -404,7 +404,8 @@ export default async function handler(req, res) {
   const maxTokens      = Math.min(Math.max(parseInt(s.maxTokens || 8192, 10), 1024), 32000);
   const useThinking    = !!s.useThinking;
   const thinkingBudget = Math.min(Math.max(parseInt(s.thinkingBudget || 4000, 10), 1024), 16000);
-  const temperature    = typeof s.temperature === 'number' ? Math.min(Math.max(s.temperature, 0), 1) : undefined;
+  // NOTE: Claude Opus 4.7 has deprecated `temperature` — intentionally not
+  // forwarded even if the client sends one.
 
   // Set up SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -427,11 +428,8 @@ export default async function handler(req, res) {
         tools: TOOLS,
         messages,
       };
-      if (temperature != null) streamParams.temperature = temperature;
       if (useThinking) {
         streamParams.thinking = { type: 'enabled', budget_tokens: thinkingBudget };
-        // Anthropic requires temperature=1 (or unset) when thinking is enabled.
-        delete streamParams.temperature;
       }
 
       const stream = client.messages.stream(streamParams);

@@ -1,0 +1,122 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - link "Just Hail ADMIN v1.0" [ref=e4] [cursor=pointer]:
+      - /url: Just Hail.html
+      - img "Just Hail" [ref=e5]
+      - generic [ref=e6]:
+        - text: ADMIN
+        - text: v1.0
+    - generic [ref=e9]: Live · just now
+    - button "Refreshing…" [ref=e10] [cursor=pointer]: Refreshing…
+    - button "Sign out" [ref=e12] [cursor=pointer]
+  - main [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]: · Storm Campaigns
+          - heading "Virtual door knock" [level=1] [ref=e18]
+          - paragraph [ref=e19]: Draw a polygon in IHM → click "Retrieve Contact Data" → paste the URL below with a note. Every polygon becomes its own campaign.
+        - generic [ref=e20]:
+          - button "🗺 Map view" [ref=e21] [cursor=pointer]
+          - button "Refresh" [ref=e22] [cursor=pointer]
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]: IHM Territory URL or ID
+          - textbox "https://maps.interactivehailmaps.com/Territory/Details/177827?idr=true" [ref=e27]
+        - generic [ref=e28]:
+          - generic [ref=e29]: Your note / label
+          - textbox "e.g. Fern Bluff — 4/18 hail, 1.75\"+" [ref=e30]
+        - button "Pull from IHM →" [ref=e32] [cursor=pointer]
+      - table [ref=e35]:
+        - rowgroup [ref=e36]:
+          - row "Created Note / Label Territory Status Properties Contacts Actions" [ref=e37]:
+            - columnheader "Created" [ref=e38]
+            - columnheader "Note / Label" [ref=e39]
+            - columnheader "Territory" [ref=e40]
+            - columnheader "Status" [ref=e41]
+            - columnheader "Properties" [ref=e42]
+            - columnheader "Contacts" [ref=e43]
+            - columnheader "Actions" [ref=e44]
+        - rowgroup [ref=e45]:
+          - row "No campaigns yet. Paste an IHM Territory URL above to create your first one." [ref=e46]:
+            - cell "No campaigns yet. Paste an IHM Territory URL above to create your first one." [ref=e47]:
+              - generic [ref=e48]: No campaigns yet.
+              - generic [ref=e49]: Paste an IHM Territory URL above to create your first one.
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]: · Storm Command Center
+          - heading "Live storm feed" [level=1] [ref=e54]
+          - paragraph [ref=e55]: Real-time hail events from Interactive Hail Maps. Pins, alerts, and status changes land here the moment IHM fires a webhook.
+        - generic [ref=e56]:
+          - generic [ref=e57]: Connecting…
+          - button "Refresh" [ref=e58] [cursor=pointer]
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - generic [ref=e61]: "0"
+          - generic [ref=e62]: Hail alerts
+        - generic [ref=e63]:
+          - generic [ref=e64]: "0"
+          - generic [ref=e65]: Monitoring hits
+        - generic [ref=e66]:
+          - generic [ref=e67]: "0"
+          - generic [ref=e68]: Pin status changes
+        - generic [ref=e69]:
+          - generic [ref=e70]: "0"
+          - generic [ref=e71]: Total events (last 50)
+      - table [ref=e74]:
+        - rowgroup [ref=e75]:
+          - row "Received Event Detail Address Size / Status" [ref=e76]:
+            - columnheader "Received" [ref=e77]
+            - columnheader "Event" [ref=e78]
+            - columnheader "Detail" [ref=e79]
+            - columnheader "Address" [ref=e80]
+            - columnheader "Size / Status" [ref=e81]
+        - rowgroup [ref=e82]:
+          - row "No storm events yet. Once IHM webhook subscriptions are live, events appear here in real time." [ref=e83]:
+            - cell "No storm events yet. Once IHM webhook subscriptions are live, events appear here in real time." [ref=e84]:
+              - generic [ref=e85]: No storm events yet.
+              - generic [ref=e86]: Once IHM webhook subscriptions are live, events appear here in real time.
+      - generic [ref=e87]:
+        - generic [ref=e88]: Showing 0 events · Polls /api/admin/storms every 15s
+        - generic [ref=e89]: Updated never
+    - generic [ref=e90]:
+      - generic [ref=e91]:
+        - generic [ref=e92]: · Lead intake
+        - heading "Estimate requests" [level=1] [ref=e93]
+        - paragraph [ref=e94]: Every form submission from justhail.com, in order.
+      - generic [ref=e95]:
+        - button "Export CSV" [ref=e96] [cursor=pointer]
+        - link "Open Google Sheet ↗" [ref=e97] [cursor=pointer]:
+          - /url: "#"
+    - generic [ref=e98]:
+      - textbox "Search name, phone, vehicle, ZIP…" [ref=e99]
+      - combobox [ref=e100]:
+        - option "All statuses" [selected]
+        - option "New"
+        - option "Contacted"
+        - option "Scheduled"
+        - option "Closed"
+      - combobox [ref=e101]:
+        - option "All timelines" [selected]
+        - option "ASAP"
+        - option "This week"
+        - option "Flexible"
+      - generic [ref=e102]: "Tip: press / to search, R to refresh"
+    - generic [ref=e103]:
+      - table [ref=e105]:
+        - rowgroup [ref=e106]:
+          - 'row "Time Ref # Customer Vehicle Severity Timeline Status" [ref=e107]':
+            - columnheader "Time" [ref=e108]
+            - 'columnheader "Ref #" [ref=e109]'
+            - columnheader "Customer" [ref=e110]
+            - columnheader "Vehicle" [ref=e111]
+            - columnheader "Severity" [ref=e112]
+            - columnheader "Timeline" [ref=e113]
+            - columnheader "Status" [ref=e114]
+        - rowgroup
+      - generic [ref=e117]: Fetching from Google Sheet…
+    - generic [ref=e118]:
+      - generic [ref=e119]: Showing 0 of 0 leads
+      - generic [ref=e120]: Auto-refresh every 45s
+  - button "🧠 Strategist" [ref=e121] [cursor=pointer]: 🧠 Strategist
