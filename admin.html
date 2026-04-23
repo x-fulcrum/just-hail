@@ -1549,11 +1549,17 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
   let pinCount = 0;
 
   // --- Render swath polygons FIRST so pins stack on top ---
+  // IHM's /api/SwathDataFl returns { s, r, p, l } per polygon. After inspection:
+  //   l (0-2) is the SEVERITY layer — this is what drives color / "how bad"
+  //     (0 = light, 1 = moderate, 2 = heavy). Distribution backs it up: on a
+  //     big hail day we see ~38/39/15 split across l=0/1/2.
+  //   s is a storm-cluster ID (ranges 1..N on any given day)
+  //   r is the ring index for nested contours within one cluster (1=outermost)
   const currentOpacity = getSwathOpacity();
   for (const poly of polygons) {
     const latlngs = (poly.points || []).map((p) => [p.lat, p.lng]);
     if (latlngs.length < 3) continue;
-    const color = swathTierColor(poly.sizeTier);
+    const color = swathLayerColor(poly.layer);
     const polyLayer = window.L.polygon(latlngs, {
       color,
       weight: 1.2,
@@ -1564,8 +1570,8 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
     polyLayer._isSwathPoly = true;  // tag so slider can find + restyle later
     polyLayer.bindPopup(
       `<div style="color:#111;font-size:12px;line-height:1.5;">
-        <strong style="display:inline-block;padding:2px 8px;background:${color};color:#111;border-radius:2px;margin-bottom:4px;">${swathTierLabel(poly.sizeTier)} hail zone</strong>
-        <div>${poly.points.length} boundary pts</div>
+        <strong style="display:inline-block;padding:2px 8px;background:${color};color:#111;border-radius:2px;margin-bottom:4px;">${swathLayerLabel(poly.layer)} hail zone</strong>
+        <div>Storm #${poly.sizeTier ?? '—'} · ring ${poly.ring ?? '—'} · ${poly.points.length} boundary pts</div>
       </div>`
     );
     polyLayer.addTo(layer);
@@ -1613,26 +1619,23 @@ async function loadSwaths(map, dateInput, toggle, setLayer) {
   swathStatus(`${parts.join(' + ')} on ${date}.`, 'ok');
 }
 
-// Color for a SwathDataFl polygon by its size tier (IHM's `s` field).
-// Tiers are integer buckets 1..N matching their internal size thresholds.
-function swathTierColor(tier) {
-  switch (Number(tier)) {
-    case 1: return '#ffd700';  // small — gold
-    case 2: return '#ffa500';  // orange
-    case 3: return '#ff6200';  // deep orange
-    case 4: return '#d92020';  // red
-    case 5: return '#8b00ff';  // purple
-    default: return '#888';
+// Color for an IHM SwathDataFl polygon by its `l` (layer/severity) field.
+// Verified empirically: l in {0, 1, 2} with a ~38/39/15 split on a big day,
+// which matches "light / moderate / heavy" hail severity buckets.
+function swathLayerColor(layer) {
+  switch (Number(layer)) {
+    case 0: return '#ffd700';  // light — gold
+    case 1: return '#ff6200';  // moderate — orange
+    case 2: return '#8b00ff';  // heavy — purple
+    default: return '#888';    // unknown
   }
 }
-function swathTierLabel(tier) {
-  switch (Number(tier)) {
-    case 1: return '0.75–1"';
-    case 2: return '1–1.5"';
-    case 3: return '1.5–2"';
-    case 4: return '2–2.5"';
-    case 5: return '2.5"+';
-    default: return `Tier ${tier ?? '?'}`;
+function swathLayerLabel(layer) {
+  switch (Number(layer)) {
+    case 0: return 'Light';
+    case 1: return 'Moderate';
+    case 2: return 'Heavy';
+    default: return 'Unknown';
   }
 }
 
@@ -1707,26 +1710,39 @@ function hailSizeColor(sizeIn) {
   return '#bababa';
 }
 
-// Floating legend shown while the hail overlay is on. Labels track both the
-// polygon size tiers (swathTierLabel) and the pin color ramp (hailSizeColor).
+// Floating legend shown while the hail overlay is on. Two groups:
+//   - Swath zones (the big colored polygons) — severity by IHM's `l` field
+//   - Individual pins (confirmed impact reports) — sized by radar-estimated
+//     hail diameter in the pin's `Size` field (full 6-tier ramp)
 const HAIL_SIZE_TIERS = [
-  { label: '2.5"+ (baseball)',     color: '#8b00ff' },
-  { label: '2.0–2.5" (hen egg)',   color: '#d92020' },
-  { label: '1.5–2.0" (ping pong)', color: '#ff6200' },
-  { label: '1.0–1.5" (quarter)',   color: '#ffa500' },
-  { label: '0.75–1" (marble)',     color: '#ffd700' },
-  { label: '< 0.75" (pea)',        color: '#bababa' },
+  { group: 'Swath severity',
+    rows: [
+      { label: 'Heavy',    color: '#8b00ff' },
+      { label: 'Moderate', color: '#ff6200' },
+      { label: 'Light',    color: '#ffd700' },
+    ],
+  },
+  { group: 'Pin size',
+    rows: [
+      { label: '2.5"+ (baseball)',     color: '#8b00ff' },
+      { label: '2.0–2.5" (hen egg)',   color: '#d92020' },
+      { label: '1.5–2.0" (ping pong)', color: '#ff6200' },
+      { label: '1.0–1.5" (quarter)',   color: '#ffa500' },
+      { label: '0.75–1" (marble)',     color: '#ffd700' },
+      { label: '< 0.75" (pea)',        color: '#bababa' },
+    ],
+  },
 ];
 function showHailLegend() {
   const host = document.getElementById('mapViewMap');
   if (!host || document.getElementById('hailLegend')) return;
   const div = document.createElement('div');
   div.id = 'hailLegend';
-  div.style.cssText = 'position:absolute;bottom:12px;right:12px;background:rgba(10,11,16,0.88);border:1px solid var(--hair-strong);border-radius:2px;padding:10px 12px;font-size:11px;color:var(--ink);z-index:400;min-width:160px;';
-  div.innerHTML = `
-    <div style="font-family:var(--font-mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-dim);margin-bottom:6px;">Hail size</div>
-    ${HAIL_SIZE_TIERS.map((t) => `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;"><span style="width:14px;height:14px;border-radius:50%;background:${t.color};display:inline-block;flex-shrink:0;"></span><span>${t.label}</span></div>`).join('')}
-  `;
+  div.style.cssText = 'position:absolute;bottom:12px;right:12px;background:rgba(10,11,16,0.88);border:1px solid var(--hair-strong);border-radius:2px;padding:10px 12px;font-size:11px;color:var(--ink);z-index:400;min-width:170px;max-width:200px;';
+  div.innerHTML = HAIL_SIZE_TIERS.map((group, gi) => `
+    <div style="font-family:var(--font-mono);font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-dim);margin:${gi === 0 ? '0' : '10px 0 6px'} 0 6px;">${group.group}</div>
+    ${group.rows.map((row) => `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;"><span style="width:14px;height:14px;border-radius:50%;background:${row.color};display:inline-block;flex-shrink:0;"></span><span>${row.label}</span></div>`).join('')}
+  `).join('');
   host.appendChild(div);
 }
 function hideHailLegend() {
