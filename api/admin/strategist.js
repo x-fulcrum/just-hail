@@ -24,6 +24,9 @@ import {
 } from '../../lib/research.js';
 import { getStormData, getSwathPolygons } from '../../lib/ihm-web.js';
 import { getSpcOutlookSummary, getSpcMultiDayOutlook } from '../../lib/spc.js';
+import { draftForLead } from '../../lib/drafts.js';
+import { sendEmail } from '../../lib/email.js';
+import { upsertContact, addTags, removeTags } from '../../lib/ghl.js';
 
 const client = new Anthropic();
 
@@ -48,12 +51,27 @@ Hail + storm data (past + present):
 Hail FORECAST (future — what's coming):
 - get_hail_outlook         : NOAA Storm Prediction Center convective outlook, Day 1 (today) through Day 8. Always use this when Charlie asks about FUTURE hail risk, upcoming storms, or where to position for the next event. Day 1-2 have hail-specific probability; Day 3+ have categorical/severe-probability.
 
-Just Hail's CRM state:
+Just Hail's CRM state (read):
 - search_our_campaigns     : what polygons Charlie has already pulled
 - get_campaign_detail      : full info on one campaign (sample leads + bounds)
 - query_leads              : search leads table w/ filters (campaign_id, zip, city, name, has_email, has_phone)
 - query_drafts             : search drafts (pending/approved/sent/failed) w/ filters
 - lead_stats               : aggregate counts grouped by campaign/city/zip/state
+- get_lead_full            : deep snapshot of one lead (row + all drafts) — call BEFORE drafting/sending
+
+Engagement (write):
+- draft_outreach_for_lead  : generate SMS + email drafts with Claude (saves approved=false). SAFE to call proactively — drafts don't send anything.
+- approve_draft            : flip approved=true on a specific draft. DESTRUCTIVE intent (draft becomes sendable). REQUIRES explicit user confirmation in chat before calling.
+- send_approved_email_draft: actually emails the lead via Resend. MOST DESTRUCTIVE — real email goes out. REQUIRES explicit user confirmation naming the specific draft_id. Never chain approve→send without user saying "send it" in between.
+- push_lead_to_ghl         : upsert a GHL contact for a lead (adds default tags + triggers workflows). Reversible; safe to call when the user asks.
+- tag_ghl_contact          : add or remove tags on a GHL contact. Safe; used to trigger or pause GHL workflows.
+
+ENGAGEMENT SAFETY RULES (NON-NEGOTIABLE):
+- Drafting is fine to do proactively when Charlie asks for outreach content.
+- NEVER approve a draft without Charlie explicitly saying "approve" or similar.
+- NEVER send an email without Charlie explicitly saying "send" and specifying which draft. Recap the subject + first line before sending, so Charlie can veto.
+- Always surface the draft_id + who it's going to + subject + preview of the first ~120 chars before asking for send confirmation.
+- If Charlie says "send all approved drafts" or "send to the whole campaign", REFUSE until you've listed every recipient for him to eyeball. No blast sends without per-email visibility.
 
 Research:
 - perplexity_research      : deep research w/ citations (multi-source, prefers recent)
@@ -198,6 +216,46 @@ const TOOLS = [
     input_schema: { type: 'object', required: ['query'], properties: {
       query: { type: 'string' },
       limit: { type: 'integer', default: 3, maximum: 10 },
+    }}},
+
+  // ============================================================
+  // Engagement tools — Phase 3b (write operations w/ safety gates)
+  // ============================================================
+  { name: 'get_lead_full',
+    description: 'Full read-only snapshot of one lead: row + all associated drafts + campaign info. Call this BEFORE drafting or contacting a lead so you know what exists already and which channels are still available.',
+    input_schema: { type: 'object', required: ['lead_id'], properties: {
+      lead_id: { type: 'integer' },
+    }}},
+  { name: 'draft_outreach_for_lead',
+    description: "Generate AI-written SMS + email drafts for one lead using Claude (Charlie's voice). Saves BOTH channels as separate rows in lead_outreach_drafts with approved=false. SAFE to call proactively when asked — drafts don't send anything. Re-drafting deletes any existing UNAPPROVED drafts for this lead+channel first (approved history preserved). Returns sms_draft_id, email_draft_id + previews.",
+    input_schema: { type: 'object', required: ['lead_id'], properties: {
+      lead_id:        { type: 'integer' },
+      storm_context:  { type: 'string', description: "Optional free-text storm context Charlie wants worked in (e.g. '4/18 Cedar Park hail, 1.75\"+')" },
+    }}},
+  { name: 'approve_draft',
+    description: "Flip a draft's `approved` flag to TRUE. Does NOT send — just marks the draft as sendable. REQUIRES `confirm: true` AND explicit user authorization in chat (e.g. Charlie said 'approve draft 42'). NEVER call this proactively without a direct user instruction.",
+    input_schema: { type: 'object', required: ['draft_id', 'confirm'], properties: {
+      draft_id: { type: 'integer' },
+      confirm:  { type: 'boolean', description: 'MUST be true. Gate to prevent accidental approval.' },
+    }}},
+  { name: 'send_approved_email_draft',
+    description: "Send an already-approved email draft to the lead via Resend. REAL EMAIL goes out. Most destructive tool. REQUIREMENTS: draft must exist, be an email draft, have approved=true, and not already be sent. MUST pass `confirm: true`. Before calling, always recap to Charlie: draft_id, recipient email, subject, and first ~120 chars of body — then wait for an explicit 'send it' or similar.",
+    input_schema: { type: 'object', required: ['draft_id', 'confirm'], properties: {
+      draft_id: { type: 'integer' },
+      confirm:  { type: 'boolean', description: 'MUST be true. Gate to prevent accidental send.' },
+    }}},
+  { name: 'push_lead_to_ghl',
+    description: "Upsert a single lead as a GoHighLevel contact. Adds default tags (just-hail, campaign-{id}, src-{source} if present) plus any extra_tags. Tag-added events trigger any GHL workflows listening for them — this is how Charlie fires cadences. Reversible (remove the contact in GHL), so safe to call when asked.",
+    input_schema: { type: 'object', required: ['lead_id'], properties: {
+      lead_id:    { type: 'integer' },
+      extra_tags: { type: 'array', items: { type: 'string' }, description: 'Additional tags to attach — e.g. ["jh-strategist-routed", "priority-high"]' },
+    }}},
+  { name: 'tag_ghl_contact',
+    description: "Add or remove tags from an existing GHL contact. Pass remove=true to REMOVE. Tag changes are the primary way to trigger/pause GHL workflows (e.g. add 'pause-cadence' to stop a running sequence).",
+    input_schema: { type: 'object', required: ['ghl_contact_id', 'tags'], properties: {
+      ghl_contact_id: { type: 'string', description: 'The GHL contact id returned from push_lead_to_ghl or lookup.' },
+      tags:           { type: 'array', items: { type: 'string' }, minItems: 1 },
+      remove:         { type: 'boolean', description: 'true to remove these tags; false (default) to add them.' },
     }}},
 ];
 
@@ -374,6 +432,178 @@ async function runTool(name, input) {
       case 'jina_read_url':        return await jinaRead(input.url);
       case 'reverse_geocode':      return await nominatimReverse(input.lat, input.lng);
       case 'forward_geocode':      return { results: await nominatimSearch(input.query, { limit: input.limit }) };
+
+      // ====== Engagement (Phase 3b) ======
+      case 'get_lead_full': {
+        const id = parseInt(input.lead_id, 10);
+        if (!id) return { error: 'lead_id required' };
+        const [{ data: lead }, { data: drafts }] = await Promise.all([
+          supabase.from('leads').select('*').eq('id', id).single(),
+          supabase.from('lead_outreach_drafts').select('*').eq('lead_id', id).order('created_at', { ascending: false }),
+        ]);
+        if (!lead) return { error: 'lead not found' };
+        let campaign = null;
+        if (lead.campaign_id) {
+          const { data } = await supabase.from('campaigns').select('id, name, status, target_type, created_at, target_input').eq('id', lead.campaign_id).single();
+          if (data) campaign = {
+            id: data.id, name: data.name, status: data.status, created_at: data.created_at,
+            territory_id: data.target_input?.territory_id || null,
+            polygon_points: data.target_input?.polygon?.length || 0,
+          };
+        }
+        return {
+          lead: {
+            id: lead.id, campaign_id: lead.campaign_id,
+            first_name: lead.first_name, last_name: lead.last_name,
+            email: lead.email, phone: lead.phone, mobile: lead.mobile,
+            street: lead.street, city: lead.city, state: lead.state, zip: lead.zip,
+            source: lead.source, status: lead.status,
+            opted_out: lead.opted_out || false,
+            last_touched_at: lead.last_touched_at || null,
+            last_channel: lead.last_channel || null,
+          },
+          campaign,
+          drafts: (drafts || []).map((d) => ({
+            id: d.id, channel: d.channel, approved: d.approved,
+            subject: d.subject, body: (d.body || '').slice(0, 400),
+            sent_at: d.sent_at, sent_status: d.sent_status,
+            derived_status: d.sent_status === 'failed' ? 'failed'
+                          : d.sent_at ? 'sent'
+                          : d.approved ? 'approved'
+                          : 'pending',
+            created_at: d.created_at,
+          })),
+        };
+      }
+
+      case 'draft_outreach_for_lead': {
+        const id = parseInt(input.lead_id, 10);
+        if (!id) return { error: 'lead_id required' };
+        const { data: lead } = await supabase.from('leads').select('*').eq('id', id).single();
+        if (!lead) return { error: 'lead not found' };
+        let campaign = null;
+        if (lead.campaign_id) {
+          const { data } = await supabase.from('campaigns').select('*').eq('id', lead.campaign_id).single();
+          campaign = data;
+        }
+        let draft;
+        try {
+          draft = await draftForLead({ lead, campaign, stormContext: input.storm_context || null });
+        } catch (err) {
+          return { error: `drafting failed: ${err.message}` };
+        }
+        // Drop any existing UNAPPROVED drafts for this lead on these channels (preserve approved history).
+        await supabase.from('lead_outreach_drafts')
+          .delete().eq('lead_id', id).eq('approved', false).in('channel', ['sms', 'email']);
+        const now = new Date().toISOString();
+        const [{ data: smsRow, error: sErr }, { data: emRow, error: eErr }] = await Promise.all([
+          supabase.from('lead_outreach_drafts').insert({
+            lead_id: id, campaign_id: lead.campaign_id, channel: 'sms',
+            body: draft.sms.body, model: draft.model, approved: false, created_at: now,
+          }).select('id').single(),
+          supabase.from('lead_outreach_drafts').insert({
+            lead_id: id, campaign_id: lead.campaign_id, channel: 'email',
+            subject: draft.email.subject, body: draft.email.body,
+            model: draft.model, approved: false, created_at: now,
+          }).select('id').single(),
+        ]);
+        if (sErr) return { error: 'sms insert failed: ' + sErr.message };
+        if (eErr) return { error: 'email insert failed: ' + eErr.message };
+        return {
+          lead_id: id,
+          sms_draft_id: smsRow.id,
+          email_draft_id: emRow.id,
+          sms_body: draft.sms.body,
+          email_subject: draft.email.subject,
+          email_body_preview: draft.email.body.slice(0, 400),
+          personalization_used: draft.personalization_used,
+          approved: false,
+        };
+      }
+
+      case 'approve_draft': {
+        const id = parseInt(input.draft_id, 10);
+        if (!id) return { error: 'draft_id required' };
+        if (input.confirm !== true) return { error: 'confirm must be true — user must explicitly authorize approval' };
+        const { data: before } = await supabase.from('lead_outreach_drafts').select('*').eq('id', id).single();
+        if (!before) return { error: 'draft not found' };
+        if (before.approved) return { ok: true, draft_id: id, already_approved: true };
+        if (before.sent_at)  return { error: `draft ${id} already sent at ${before.sent_at} — nothing to approve` };
+        const { error } = await supabase.from('lead_outreach_drafts').update({ approved: true }).eq('id', id);
+        if (error) return { error: error.message };
+        return {
+          ok: true, draft_id: id, approved: true,
+          channel: before.channel, lead_id: before.lead_id,
+          subject: before.subject, body_preview: (before.body || '').slice(0, 200),
+        };
+      }
+
+      case 'send_approved_email_draft': {
+        const id = parseInt(input.draft_id, 10);
+        if (!id) return { error: 'draft_id required' };
+        if (input.confirm !== true) return { error: 'confirm must be true — user must explicitly authorize send' };
+        const { data: draft } = await supabase.from('lead_outreach_drafts').select('*').eq('id', id).single();
+        if (!draft) return { error: 'draft not found' };
+        if (draft.channel !== 'email') return { error: 'draft is not an email draft' };
+        if (!draft.approved) return { error: 'draft not approved — call approve_draft first' };
+        if (draft.sent_at)   return { error: `already sent at ${draft.sent_at}` };
+        const { data: lead } = await supabase.from('leads').select('*').eq('id', draft.lead_id).single();
+        if (!lead) return { error: 'lead not found' };
+        if (lead.opted_out) return { error: 'lead has opted out' };
+        if (!lead.email)    return { error: 'lead has no email address' };
+        try {
+          const result = await sendEmail({
+            to: lead.email, subject: draft.subject, text: draft.body,
+            tags: [
+              { name: 'campaign_id', value: String(draft.campaign_id || 'none') },
+              { name: 'lead_id',     value: String(lead.id) },
+              { name: 'draft_id',    value: String(draft.id) },
+              { name: 'source',      value: 'strategist' },
+            ],
+          });
+          const now = new Date().toISOString();
+          await Promise.all([
+            supabase.from('lead_outreach_drafts').update({ sent_at: now, sent_status: 'delivered', sent_provider_id: result.id }).eq('id', id),
+            supabase.from('leads').update({ status: 'contacted', last_touched_at: now, last_channel: 'email' }).eq('id', lead.id),
+          ]);
+          return { ok: true, draft_id: id, resend_id: result.id, to: lead.email, subject: draft.subject, sent_at: now };
+        } catch (err) {
+          await supabase.from('lead_outreach_drafts').update({ sent_status: 'failed' }).eq('id', id);
+          return { error: `send failed: ${err.message}`, hint: err.status === 403 ? 'Sender domain not verified in Resend — check RESEND_FROM.' : undefined };
+        }
+      }
+
+      case 'push_lead_to_ghl': {
+        const id = parseInt(input.lead_id, 10);
+        if (!id) return { error: 'lead_id required' };
+        const { data: lead } = await supabase.from('leads').select('*').eq('id', id).single();
+        if (!lead) return { error: 'lead not found' };
+        const extraTags = Array.isArray(input.extra_tags) ? input.extra_tags : [];
+        try {
+          const result = await upsertContact(lead, ['jh-new-lead', ...extraTags]);
+          return {
+            ok: true, lead_id: id,
+            ghl_contact_id: result?.contact?.id || null,
+            is_new: !!result?.new,
+            tags_applied: ['just-hail', lead.source ? `src-${lead.source}` : null, lead.campaign_id ? `campaign-${lead.campaign_id}` : null, 'jh-new-lead', ...extraTags].filter(Boolean),
+          };
+        } catch (err) {
+          return { error: `GHL push failed: ${err.message}`, hint: err.status === 401 || err.status === 403 ? 'GHL token missing contacts.write / contacts.readonly scope — enable in GHL Private Integration settings.' : undefined };
+        }
+      }
+
+      case 'tag_ghl_contact': {
+        const cid = String(input.ghl_contact_id || '').trim();
+        if (!cid) return { error: 'ghl_contact_id required' };
+        const tags = Array.isArray(input.tags) ? input.tags.filter(Boolean) : [];
+        if (!tags.length) return { error: 'tags array must have at least one entry' };
+        try {
+          const result = input.remove === true ? await removeTags(cid, tags) : await addTags(cid, tags);
+          return { ok: true, ghl_contact_id: cid, tags, action: input.remove ? 'removed' : 'added', result };
+        } catch (err) {
+          return { error: `GHL tag failed: ${err.message}`, hint: err.status === 401 || err.status === 403 ? 'GHL token missing tags.write scope.' : undefined };
+        }
+      }
 
       default: return { error: 'unknown tool: ' + name };
     }

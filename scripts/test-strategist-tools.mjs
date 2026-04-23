@@ -57,6 +57,42 @@ const CASES = [
     if (error) throw new Error(error.message);
     return { drafts: data };
   }],
+
+  // Engagement tools — read-only probes. We do NOT actually draft, send, or push
+  // in the automated harness (those are destructive). We verify the underlying
+  // primitives work by checking GHL auth (read-only contact search) and
+  // confirming lib functions load. Write ops are tested manually in the UI.
+  ['get_lead_full (probe)', async () => {
+    const { data } = await supabase.from('leads').select('id').limit(1);
+    if (!data?.length) return { skipped: 'no leads in table' };
+    const leadId = data[0].id;
+    const [{ data: lead }, { data: drafts }] = await Promise.all([
+      supabase.from('leads').select('id, first_name, email, phone, campaign_id').eq('id', leadId).single(),
+      supabase.from('lead_outreach_drafts').select('id, channel, approved, sent_at').eq('lead_id', leadId),
+    ]);
+    return { lead, draft_count: drafts?.length || 0 };
+  }],
+  ['ghl auth probe', async () => {
+    // Hit the GHL contacts endpoint with a harmless query to prove auth works
+    const t = process.env.GHL_PRIVATE_TOKEN, l = process.env.GHL_LOCATION_ID;
+    if (!t || !l) throw new Error('GHL_PRIVATE_TOKEN / GHL_LOCATION_ID missing');
+    const res = await fetch(`https://services.leadconnectorhq.com/contacts/?locationId=${l}&limit=1`, {
+      headers: { Authorization: `Bearer ${t}`, Version: '2021-07-28', Accept: 'application/json' },
+    });
+    if (res.status === 401 || res.status === 403) throw new Error(`auth failed: ${res.status}`);
+    const j = await res.json().catch(() => ({}));
+    return { status: res.status, contact_count_sample: j?.contacts?.length ?? null };
+  }],
+  ['resend auth probe', async () => {
+    const k = process.env.RESEND_API_KEY;
+    if (!k) throw new Error('RESEND_API_KEY missing');
+    const res = await fetch('https://api.resend.com/domains', {
+      headers: { Authorization: `Bearer ${k}`, Accept: 'application/json' },
+    });
+    if (res.status === 401) throw new Error('resend key invalid');
+    const j = await res.json().catch(() => ({}));
+    return { status: res.status, domain_count: (j?.data?.length ?? 0) };
+  }],
 ];
 
 // ------------------------------------------------------------
