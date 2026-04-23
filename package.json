@@ -9,15 +9,16 @@
   },
   "scripts": {
     "ihm:list-types": "node scripts/ihm-subscribe.js list-types",
-    "ihm:list":       "node scripts/ihm-subscribe.js list",
-    "ihm:subscribe":  "node scripts/ihm-subscribe.js subscribe",
-    "ihm:test":       "node scripts/ihm-subscribe.js test",
-    "ihm:unsub":      "node scripts/ihm-subscribe.js unsubscribe"
+    "ihm:list": "node scripts/ihm-subscribe.js list",
+    "ihm:subscribe": "node scripts/ihm-subscribe.js subscribe",
+    "ihm:test": "node scripts/ihm-subscribe.js test",
+    "ihm:unsub": "node scripts/ihm-subscribe.js unsubscribe"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
     "@supabase/supabase-js": "^2.47.10",
     "cheerio": "^1.0.0",
-    "papaparse": "^5.4.1"
+    "papaparse": "^5.4.1",
+    "postgres": "^3.4.9"
   }
 }
