@@ -182,7 +182,7 @@ function App() {
             WebkitBackdropFilter: 'blur(14px)',
           }}>
             {[
-              { k: 'A+ BBB', v: 'Accreditation since 2004', img: 'img/bbb-accredited.png',
+              { k: 'A+ BBB', v: 'Accreditation since 2008', img: 'img/bbb-accredited.png',
                 href: 'https://www.bbb.org/us/tx/leander/profile/car-dent-repair/just-hail-0825-1000236479/addressId/428484',
                 ariaLabel: 'View Just Hail on the Better Business Bureau (opens in a new tab)' },
               { k: 'Lifetime', v: 'Workmanship warranty',

@@ -10,7 +10,7 @@
 const JOURNAL_AUTHOR = {
   name: 'Marcus Holloway',
   title: 'Master PDR Technician · I-CAR Platinum',
-  bio: '17 years restoring hail-damaged vehicles in Central Texas. I-CAR Platinum certified, ASE-accredited, and on record with every major carrier.',
+  bio: '18 years restoring hail-damaged vehicles in Central Texas. I-CAR Platinum certified, ASE-accredited, and on record with every major carrier.',
   avatar: null, // placeholder dot
 };
 
@@ -29,7 +29,7 @@ const JOURNAL_POSTS = [
     img: 'img/damage-closeup.webp',
     featured: true,
     body: [
-      { t: 'p', c: 'The single biggest predictor of whether your hail claim gets approved at the right number isn\'t the severity of the storm — it\'s the quality of your documentation. After seventeen years and more than 24,000 vehicles restored, I can tell you with certainty: adjusters are not trying to shortchange you. They\'re looking at the photos you hand them.' },
+      { t: 'p', c: 'The single biggest predictor of whether your hail claim gets approved at the right number isn\'t the severity of the storm — it\'s the quality of your documentation. After eighteen years and more than 24,000 vehicles restored, I can tell you with certainty: adjusters are not trying to shortchange you. They\'re looking at the photos you hand them.' },
       { t: 'p', c: 'Here\'s the twelve-photo checklist we give every customer before their adjuster appointment. It takes under twenty minutes. It will add hundreds, sometimes thousands, to your settlement.' },
 
       { t: 'h2', c: '1. Full-vehicle context shots' },
@@ -124,8 +124,8 @@ const JOURNAL_POSTS = [
       { t: 'h2', c: 'Peak windows to watch' },
       { t: 'p', c: 'Historically, Williamson and Travis counties see their highest hail frequency in three distinct windows: late March through early April (cold-front convection), mid-May (peak instability), and a secondary bump in late September tied to tropical remnants. If you\'re deciding when to park under cover, those are the weeks to prioritize.' },
 
-      { t: 'h2', c: 'What 17 years of shop data shows' },
-      { t: 'p', c: 'Our intake logs — cars pulled in for hail repair since 2009 — track closely with NWS storm reports but reveal a pattern the public data misses: storms tracking east-northeast through Hill Country tend to drop large hail on Leander and Cedar Park specifically, because the cell re-intensifies as it crosses the edge of the escarpment. If you live west of the 183A toll road, you are statistically more exposed than the numbers suggest.' },
+      { t: 'h2', c: 'What 18 years of shop data shows' },
+      { t: 'p', c: 'Our intake logs — cars pulled in for hail repair since 2008 — track closely with NWS storm reports but reveal a pattern the public data misses: storms tracking east-northeast through Hill Country tend to drop large hail on Leander and Cedar Park specifically, because the cell re-intensifies as it crosses the edge of the escarpment. If you live west of the 183A toll road, you are statistically more exposed than the numbers suggest.' },
 
       { t: 'h2', c: 'What to do right now' },
       { t: 'p', c: 'Three actions that take under an hour and meaningfully reduce your exposure: (1) verify your comprehensive coverage includes hail and the deductible is waived under "act of nature" provisions — call your carrier today, not after the storm. (2) Identify two covered parking spots within ten minutes of your home and office. Shopping center parking garages are free and public. (3) Download a real-time radar app with storm-cell tracking; we recommend RadarScope for paid users and MyRadar for free.' },
@@ -216,7 +216,7 @@ function Resources({ accent }) {
                 From the shop <em style={{ color: accent, fontStyle: 'italic' }}>journal.</em>
               </h2>
               <p style={{ maxWidth: 560, color: 'var(--ink-dim)', fontSize: 16, lineHeight: 1.6, margin: 0 }}>
-                Seventeen years of notes from the bay floor. Written by our master technicians, reviewed quarterly. No SEO fluff, no AI drivel — just the stuff we wish every Texas driver knew before a storm.
+                Eighteen years of notes from the bay floor. Written by our master technicians, reviewed quarterly. No SEO fluff, no AI drivel — just the stuff we wish every Texas driver knew before a storm.
               </p>
             </div>
             <a href="#journal" onClick={(e)=>e.preventDefault()} style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--ink)', textDecoration: 'none', borderBottom: '1px solid var(--hair-strong)', paddingBottom: 4 }}>

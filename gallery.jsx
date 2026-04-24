@@ -5,7 +5,7 @@ function Gallery({ accent }) {
   const shots = [
     { src: 'img/damage-closeup.webp', label: 'Pre-repair · Hail damage to black coupe hood', w: 2, h: 1 },
     { src: 'img/before-after.webp', label: 'Reflected-light inspection · F250 hood', w: 2, h: 1 },
-    { src: 'img/repair-bay.jpeg', label: 'Charlie & Chad · Since 2009 — still making dents disappear', caption: 'Charlie and Chad, back in 2009. The same two guys are still at it here in 2026, making dents disappear. True craftsmen.', w: 4, h: 1 },
+    { src: 'img/repair-bay.jpeg', label: 'Charlie & Chad · Since 2008 — still making dents disappear', caption: 'Charlie and Chad, back in 2008. The same two guys are still at it here in 2026, making dents disappear. True craftsmen.', w: 4, h: 1 },
   ];
   const [lightbox, setLightbox] = React.useState(null); // index or null
 

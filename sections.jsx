@@ -130,7 +130,7 @@ function Marquee({ items, accent }) {
 function Metrics({ accent }) {
   const isMobile = useIsMobile(900);
   const stats = [
-    { label: 'Years in business', value: 17, suffix: '' },
+    { label: 'Years in business', value: 18, suffix: '' },
     { label: 'Vehicles restored', value: 24800, suffix: '+' },
     { label: 'Avg. insurance claim approval', value: 97.4, suffix: '%', decimals: 1 },
     { label: 'Typical out-of-pocket', value: 0, suffix: '$', prefix: true },
