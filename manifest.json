@@ -1,0 +1,15 @@
+{
+  "name": "Just Hail",
+  "short_name": "Just Hail",
+  "description": "Paintless dent repair and insurance direct-billing for hail-damaged vehicles in Leander, TX.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0b10",
+  "theme_color": "#0a0b10",
+  "scope": "/",
+  "lang": "en-US",
+  "icons": [
+    { "src": "/logo.webp", "sizes": "512x512", "type": "image/webp", "purpose": "any maskable" }
+  ],
+  "categories": ["business", "automotive", "utilities"]
+}

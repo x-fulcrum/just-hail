@@ -1,9 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/0.9">
+
   <url>
-    <loc>https://just-hail-charlie-ohnstads-projects-a684291d.vercel.app/</loc>
-    <lastmod>2026-04-20</lastmod>
-    <changefreq>monthly</changefreq>
+    <loc>https://justhail.net/</loc>
+    <lastmod>2026-04-24</lastmod>
+    <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://justhail.net/img/shop-hero.png</image:loc>
+      <image:title>Just Hail auto body repair shop in Leander, Texas</image:title>
+      <image:caption>Family-owned paintless dent repair shop since 2008</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://justhail.net/img/repair-bay.jpeg</image:loc>
+      <image:title>Charlie and Chad at Just Hail's repair bay</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://justhail.net/img/before-after.webp</image:loc>
+      <image:title>Before and after reflected-light inspection on a hail-damaged F-250 hood</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://justhail.net/img/damage-closeup.webp</image:loc>
+      <image:title>Close-up of hail damage on a black coupe hood before repair</image:title>
+    </image:image>
   </url>
+
 </urlset>
