@@ -236,7 +236,7 @@ function Features({ accent }) {
         <Reveal>
           <Eyebrow>03 — Services</Eyebrow>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(48px, 6vw, 88px)', lineHeight: 1, margin: '14px 0 80px', fontWeight: 400, letterSpacing: '-0.02em', maxWidth: 900 }}>
-            A full-stack restoration shop, <em style={{ color: accent, fontStyle: 'italic' }}>not a dent brigade.</em>
+            One stop shop for all hail damage — <em style={{ color: accent, fontStyle: 'italic' }}>PDR, panel replacements, glass, and insurance negotiation.</em>
           </h2>
         </Reveal>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 0, borderTop: '1px solid var(--hair)', borderLeft: '1px solid var(--hair)' }}>
