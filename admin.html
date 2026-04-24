@@ -121,6 +121,88 @@
   #stratInput:focus { outline: none; border-color: var(--accent); }
   #stratSend { padding: 10px 16px; background: var(--accent); color: #0a0b10; border: none; border-radius: 2px; font-weight: 500; cursor: pointer; font-size: 13px; }
   #stratSend:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ============================================================
+     FORECAST MAP FULLSCREEN MODE
+     Click the ⛶ button to make #fcMap fill the viewport; page
+     stops fighting the map for scroll. Esc / ✕ exits.
+     ============================================================ */
+  #fcMap.fc-fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    height: 100vh !important;
+    z-index: 900;
+    border-radius: 0;
+  }
+  #fcExitFullscreen {
+    display: none;
+    position: fixed; top: 14px; right: 14px; z-index: 901;
+    padding: 10px 16px; font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: rgba(10,11,16,0.9); color: var(--ink);
+    border: 1px solid var(--hair-strong); border-radius: 2px;
+    cursor: pointer; backdrop-filter: blur(8px);
+  }
+  body.fc-fullscreen-active #fcExitFullscreen { display: block; }
+  body.fc-fullscreen-active { overflow: hidden; }
+
+  /* ============================================================
+     IPAD / IPHONE — responsive polish
+     Keeps every major admin flow usable on mobile without a
+     redesign. Breakpoints:
+       900px  — tablet (stack grids, full-width drawers)
+       640px  — phone (tighter padding, smaller titles)
+     ============================================================ */
+  @media (max-width: 900px) {
+    main { padding: 24px 16px 60px !important; }
+    .h1 { font-size: 32px !important; }
+
+    /* Stat tile grids collapse to 2-col then 1-col */
+    #statsRow, #cmdCounts { grid-template-columns: repeat(2, 1fr) !important; }
+
+    /* IHM import form stacks */
+    #ihmImportForm { grid-template-columns: 1fr !important; gap: 12px !important; }
+
+    /* Every table gains horizontal scroll if too wide */
+    table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+    th, td { white-space: nowrap; }
+
+    /* Campaign map drawer goes full viewport */
+    .drawer[style*="1400px"] { width: 100vw !important; }
+
+    /* Strategist panel fills the screen on mobile */
+    #stratPanel {
+      width: 100vw !important;
+      max-width: 100vw !important;
+      height: 100vh !important;
+      max-height: 100vh !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      border-radius: 0 !important;
+    }
+    #stratToggle { right: 14px; bottom: 14px; }
+
+    /* Hail-forecast map a bit shorter on mobile (fullscreen button handles the rest) */
+    #fcMap { height: 360px !important; }
+
+    /* Day picker wraps more naturally */
+    #fcDayPicker { gap: 4px !important; }
+    .fc-day-btn { padding: 6px 10px !important; font-size: 10px !important; }
+
+    /* Header: reduce logo + hide non-critical chips */
+    header { padding: 12px 16px !important; gap: 12px !important; }
+  }
+  @media (max-width: 640px) {
+    #statsRow, #cmdCounts { grid-template-columns: 1fr !important; }
+    .h1 { font-size: 26px !important; }
+    .eyebrow { font-size: 9px !important; }
+    /* Touch-friendly tap targets */
+    .btn { padding: 12px 18px !important; min-height: 44px; }
+    input, select, textarea { min-height: 44px; font-size: 16px !important; /* prevents iOS zoom on focus */ }
+  }
+
+  /* iOS: prevent pinch-zoom from hijacking Leaflet */
+  .leaflet-container { touch-action: manipulation; }
 </style>
 </head>
 <body>
@@ -270,6 +352,7 @@
             <button class="fc-layer-btn" data-kind="cat" style="padding: 6px 12px; font-size: 11px; background: var(--accent); color: #0a0b10; border: none; font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;">Categorical</button>
             <button class="fc-layer-btn" data-kind="hail" style="padding: 6px 12px; font-size: 11px; background: transparent; color: var(--ink-dim); border: none; border-left: 1px solid var(--hair-strong); font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;">Hail %</button>
           </div>
+          <button class="btn btn-ghost" id="fcFullscreenBtn" title="Expand the map to fill the screen — tap ✕ or press Escape to exit" style="font-size: 12px; padding: 8px 14px;">⛶ Fullscreen</button>
           <button class="btn btn-ghost" id="fcRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
         </div>
       </div>
@@ -464,6 +547,9 @@
 
 <!-- Drawer for lead details -->
 <div id="drawerHost"></div>
+
+<!-- Forecast fullscreen exit button — shown via body.fc-fullscreen-active class -->
+<button id="fcExitFullscreen" type="button">✕ Exit fullscreen</button>
 
 <script>
 // =========================================================
@@ -2399,6 +2485,36 @@ function initHailForecast() {
     btn.addEventListener('click', () => { fcState.kind = btn.dataset.kind; renderFc(); });
   });
   document.getElementById('fcRefreshBtn')?.addEventListener('click', renderFc);
+
+  // Fullscreen toggle wiring — mobile users especially want this so the
+  // page stops fighting Leaflet for touch gestures. Desktop can use it too.
+  const fcFsBtn   = document.getElementById('fcFullscreenBtn');
+  const fcFsExit  = document.getElementById('fcExitFullscreen');
+  function enterFcFullscreen() {
+    const mapEl = document.getElementById('fcMap');
+    if (!mapEl) return;
+    mapEl.classList.add('fc-fullscreen');
+    document.body.classList.add('fc-fullscreen-active');
+    // Leaflet caches container size on init — tell it to remeasure.
+    setTimeout(() => { try { fcState.map?.invalidateSize(true); } catch {} }, 260);
+  }
+  function exitFcFullscreen() {
+    const mapEl = document.getElementById('fcMap');
+    if (!mapEl) return;
+    mapEl.classList.remove('fc-fullscreen');
+    document.body.classList.remove('fc-fullscreen-active');
+    setTimeout(() => { try { fcState.map?.invalidateSize(true); } catch {} }, 260);
+  }
+  fcFsBtn?.addEventListener('click', () => {
+    const isFullscreen = document.getElementById('fcMap')?.classList.contains('fc-fullscreen');
+    isFullscreen ? exitFcFullscreen() : enterFcFullscreen();
+  });
+  fcFsExit?.addEventListener('click', exitFcFullscreen);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('fc-fullscreen-active')) {
+      exitFcFullscreen();
+    }
+  });
 
   // Wait for Leaflet + campaign data, then first render
   initFcMap().then(renderFc);
