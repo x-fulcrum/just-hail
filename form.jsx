@@ -297,7 +297,7 @@ function SmartForm({ accent }) {
           fontWeight: 500, cursor: submitting ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 12,
           letterSpacing: '0.02em', opacity: submitting ? 0.6 : 1, transition: 'opacity 200ms',
         }}>
-          {submitting ? 'Sending…' : 'Get my bonded estimate'}
+          {submitting ? 'Sending…' : 'Submit my form'}
           <span style={{ fontSize: 18 }}>{submitting ? '⋯' : '→'}</span>
         </button>
       </div>
@@ -359,7 +359,7 @@ function ContactBlock({ accent }) {
               Tell us about <em style={{ color: accent, fontStyle: 'italic' }}>your storm.</em>
             </h2>
             <p style={{ color: 'var(--ink-dim)', fontSize: 16, lineHeight: 1.6, marginBottom: 40 }}>
-              Most requests come back bonded within four business hours. If it's urgent, the shop phone is always faster than this form.
+              Most requests come back within four business hours. If it's urgent, the shop phone is always faster than this form.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingTop: 32, borderTop: '1px solid var(--hair)' }}>
               <InfoRow label="Phone" value="(512) 221-3013" href="tel:+15122213013" />
@@ -491,7 +491,7 @@ function ActivityTicker({ accent }) {
   const events = [
     { v: '2018 Subaru Outback', s: 'QC passed', c: 'Cedar Park' },
     { v: '2022 Ford F-150', s: 'Entered shop', c: 'Round Rock' },
-    { v: '2020 Tesla Model 3', s: 'Estimate bonded', c: 'Austin' },
+    { v: '2020 Tesla Model 3', s: 'Estimate sent', c: 'Austin' },
     { v: '2023 Honda CR-V', s: 'Claim approved', c: 'Leander' },
     { v: '2021 GMC Sierra', s: 'Delivered', c: 'Georgetown' },
     { v: '2024 Toyota 4Runner', s: 'In PDR bay 3', c: 'Liberty Hill' },

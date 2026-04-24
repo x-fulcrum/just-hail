@@ -225,7 +225,7 @@ function Features({ accent }) {
     },
     {
       title: 'Free Mobile Estimates',
-      body: 'Snap six photos in our app; receive a bonded estimate in 24 hours. No shop visit, no obligation.',
+      body: 'Snap six photos in our app; receive an estimate in 24 hours. No shop visit, no obligation.',
       meta: 'Avg. response: 4.2 hrs',
       glyph: 'estimate',
     },
@@ -476,7 +476,7 @@ function FAQ({ accent }) {
   const items = [
     { q: 'What exactly is paintless dent repair?', a: 'A certified technician uses specialty rods and pullers to massage the metal back to its factory shape from behind the panel. Because we never grind, fill, or repaint, your original finish stays intact—so the car retains its original-paint value at resale.' },
     { q: 'Do I really pay nothing out of pocket?', a: 'In most hail claims in Texas, yes. Comprehensive coverage usually carries a deductible, and we routinely negotiate a waiver as part of the "act of nature" clause. If any cost remains, we tell you in writing before work begins.' },
-    { q: 'How long will my car be in the shop?', a: 'Small storms: 2–3 days. Heavy hail with 200+ dents: 5–8 days. You get a bonded timeline at estimate, plus live SMS updates so you are never waiting for a callback.' },
+    { q: 'How long will my car be in the shop?', a: 'Small storms: 2–3 days. Heavy hail with 200+ dents: 5–8 days. You get a clear timeline at estimate, plus live SMS updates so you are never waiting for a callback.' },
     { q: 'Is the lifetime warranty actually transferable?', a: 'It follows the VIN, not the owner, on request. If you sell the vehicle, contact us and we file a transfer with the new owner—no charge, no questions.' },
     { q: 'Will the repair affect my resale value?', a: 'Paintless dent repair is the only method that preserves original-paint status. CarFax and dealer inspection systems will not flag a properly documented PDR repair as body damage.' },
     { q: 'What if my car also needs glass or paint work?', a: 'We are a full collision center. Cracked windshields are replaced with OEM glass and recalibrated for ADAS on-site. If a panel is too damaged for PDR, we color-match paint to within Delta-E 0.8 of factory.' },
