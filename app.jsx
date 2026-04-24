@@ -181,32 +181,47 @@ function App() {
             WebkitBackdropFilter: 'blur(14px)',
           }}>
             {[
-              { k: 'A+ BBB', v: 'Accreditation since 2009', img: 'img/bbb-accredited.png' },
+              { k: 'A+ BBB', v: 'Accreditation since 2009', img: 'img/bbb-accredited.png',
+                href: 'https://www.bbb.org/us/tx/leander/profile/car-dent-repair/just-hail-0825-1000236479/addressId/428484',
+                ariaLabel: 'View Just Hail on the Better Business Bureau (opens in a new tab)' },
               { k: 'Lifetime', v: 'Workmanship warranty' },
               { k: '38 Carriers', v: 'Insurance direct-bill' },
               { k: '4.9', v: '832 Google reviews', stars: true },
-            ].map((item, i) => (
-              <div key={i} style={{
-                background: 'rgba(10,11,16,0.55)',
-                padding: isMobile ? '16px 14px' : '24px 24px',
-                display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16,
-              }}>
-                {item.img && <img src={item.img} alt="BBB Accredited Business" style={{ height: isMobile ? 36 : 52, width: 'auto', flexShrink: 0, filter: 'brightness(1.1)' }} />}
-                <div>
-                  {item.stars && (
-                    <div style={{ display: 'flex', gap: 3, marginBottom: 6 }} aria-label="5 out of 5 stars">
-                      {[0,1,2,3,4].map(s => (
-                        <svg key={s} width="16" height="16" viewBox="0 0 20 20" fill="#f5b301" style={{ filter: 'drop-shadow(0 1px 2px rgba(245,179,1,0.35))' }}>
-                          <path d="M10 1.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L10 14.9l-5.3 2.7 1-5.8L1.5 7.7l5.9-.9L10 1.5z"/>
-                        </svg>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ fontFamily: 'var(--font-display)', fontSize: isMobile ? 20 : 28, fontWeight: 400, letterSpacing: '-0.01em', color: '#f5f3ee' }}>{item.k}</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: isMobile ? 9 : 11, color: 'rgba(245,243,238,0.65)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: isMobile ? 4 : 8 }}>{item.v}</div>
-                </div>
-              </div>
-            ))}
+            ].map((item, i) => {
+              // Clickable tiles render as <a>; others stay as <div>.
+              const Tag = item.href ? 'a' : 'div';
+              const tileProps = item.href
+                ? { href: item.href, target: '_blank', rel: 'noopener noreferrer', 'aria-label': item.ariaLabel || item.k }
+                : {};
+              return (
+                <Tag key={i} {...tileProps} style={{
+                  background: 'rgba(10,11,16,0.55)',
+                  padding: isMobile ? '16px 14px' : '24px 24px',
+                  display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16,
+                  textDecoration: 'none', color: 'inherit',
+                  cursor: item.href ? 'pointer' : 'default',
+                  transition: 'background 180ms ease',
+                }}
+                onMouseEnter={item.href ? (e) => { e.currentTarget.style.background = 'rgba(10,11,16,0.75)'; } : undefined}
+                onMouseLeave={item.href ? (e) => { e.currentTarget.style.background = 'rgba(10,11,16,0.55)'; } : undefined}
+                >
+                  {item.img && <img src={item.img} alt="BBB Accredited Business" style={{ height: isMobile ? 36 : 52, width: 'auto', flexShrink: 0, filter: 'brightness(1.1)' }} />}
+                  <div>
+                    {item.stars && (
+                      <div style={{ display: 'flex', gap: 3, marginBottom: 6 }} aria-label="5 out of 5 stars">
+                        {[0,1,2,3,4].map(s => (
+                          <svg key={s} width="16" height="16" viewBox="0 0 20 20" fill="#f5b301" style={{ filter: 'drop-shadow(0 1px 2px rgba(245,179,1,0.35))' }}>
+                            <path d="M10 1.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L10 14.9l-5.3 2.7 1-5.8L1.5 7.7l5.9-.9L10 1.5z"/>
+                          </svg>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: isMobile ? 20 : 28, fontWeight: 400, letterSpacing: '-0.01em', color: '#f5f3ee' }}>{item.k}</div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: isMobile ? 9 : 11, color: 'rgba(245,243,238,0.65)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: isMobile ? 4 : 8 }}>{item.v}</div>
+                  </div>
+                </Tag>
+              );
+            })}
           </div>
         </div>
         {/* scroll cue */}
