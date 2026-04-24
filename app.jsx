@@ -182,14 +182,16 @@ function App() {
             WebkitBackdropFilter: 'blur(14px)',
           }}>
             {[
-              { k: 'A+ BBB', v: 'Accreditation since 2009', img: 'img/bbb-accredited.png',
+              { k: 'A+ BBB', v: 'Accreditation since 2004', img: 'img/bbb-accredited.png',
                 href: 'https://www.bbb.org/us/tx/leander/profile/car-dent-repair/just-hail-0825-1000236479/addressId/428484',
                 ariaLabel: 'View Just Hail on the Better Business Bureau (opens in a new tab)' },
               { k: 'Lifetime', v: 'Workmanship warranty',
                 onClick: () => setWarrantyOpen(true),
                 ariaLabel: 'Read the Just Hail lifetime workmanship warranty' },
               { k: '38 Carriers', v: 'Insurance direct-bill' },
-              { k: '4.9', v: '832 Google reviews', stars: true },
+              { k: '4.9', v: '832 Google reviews', stars: true,
+                href: 'https://www.google.com/search?q=Just+Hail+Leander+TX+reviews',
+                ariaLabel: 'View Just Hail reviews on Google (opens in a new tab)' },
             ].map((item, i) => {
               // Clickable tiles render as <a> (external link) or <button> (modal);
               // static tiles stay as <div>.
