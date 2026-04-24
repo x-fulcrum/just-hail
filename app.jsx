@@ -31,6 +31,7 @@ function App() {
   });
   const [editMode, setEditMode] = React.useState(false);
   const [scrolled, setScrolled] = React.useState(false);
+  const [warrantyOpen, setWarrantyOpen] = React.useState(false);
 
   const theme = THEMES[cfg.theme] || THEMES.dark;
 
@@ -184,26 +185,33 @@ function App() {
               { k: 'A+ BBB', v: 'Accreditation since 2009', img: 'img/bbb-accredited.png',
                 href: 'https://www.bbb.org/us/tx/leander/profile/car-dent-repair/just-hail-0825-1000236479/addressId/428484',
                 ariaLabel: 'View Just Hail on the Better Business Bureau (opens in a new tab)' },
-              { k: 'Lifetime', v: 'Workmanship warranty' },
+              { k: 'Lifetime', v: 'Workmanship warranty',
+                onClick: () => setWarrantyOpen(true),
+                ariaLabel: 'Read the Just Hail lifetime workmanship warranty' },
               { k: '38 Carriers', v: 'Insurance direct-bill' },
               { k: '4.9', v: '832 Google reviews', stars: true },
             ].map((item, i) => {
-              // Clickable tiles render as <a>; others stay as <div>.
-              const Tag = item.href ? 'a' : 'div';
+              // Clickable tiles render as <a> (external link) or <button> (modal);
+              // static tiles stay as <div>.
+              const Tag = item.href ? 'a' : item.onClick ? 'button' : 'div';
               const tileProps = item.href
                 ? { href: item.href, target: '_blank', rel: 'noopener noreferrer', 'aria-label': item.ariaLabel || item.k }
-                : {};
+                : item.onClick
+                  ? { type: 'button', onClick: item.onClick, 'aria-label': item.ariaLabel || item.k }
+                  : {};
+              const isClickable = !!(item.href || item.onClick);
               return (
                 <Tag key={i} {...tileProps} style={{
                   background: 'rgba(10,11,16,0.55)',
                   padding: isMobile ? '16px 14px' : '24px 24px',
                   display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 16,
                   textDecoration: 'none', color: 'inherit',
-                  cursor: item.href ? 'pointer' : 'default',
+                  cursor: isClickable ? 'pointer' : 'default',
                   transition: 'background 180ms ease',
+                  border: 'none', font: 'inherit', textAlign: 'inherit', width: '100%',
                 }}
-                onMouseEnter={item.href ? (e) => { e.currentTarget.style.background = 'rgba(10,11,16,0.75)'; } : undefined}
-                onMouseLeave={item.href ? (e) => { e.currentTarget.style.background = 'rgba(10,11,16,0.55)'; } : undefined}
+                onMouseEnter={isClickable ? (e) => { e.currentTarget.style.background = 'rgba(10,11,16,0.75)'; } : undefined}
+                onMouseLeave={isClickable ? (e) => { e.currentTarget.style.background = 'rgba(10,11,16,0.55)'; } : undefined}
                 >
                   {item.img && <img src={item.img} alt="BBB Accredited Business" style={{ height: isMobile ? 36 : 52, width: 'auto', flexShrink: 0, filter: 'brightness(1.1)' }} />}
                   <div>
@@ -260,8 +268,115 @@ function App() {
 
       <ChatWidget accent={cfg.accent} />
 
+      {warrantyOpen && <WarrantyModal accent={cfg.accent} onClose={() => setWarrantyOpen(false)} />}
+
       {editMode && <TweaksPanel cfg={cfg} update={update} />}
     </>
+  );
+}
+
+/* Modal: Lifetime Workmanship Warranty — opens from the hero tile. Scoped so
+   we honor the workmanship promise WITHOUT committing to pay for damage we
+   didn't create (manager approval on every third-party quote + clear exclusions). */
+function WarrantyModal({ accent, onClose }) {
+  // Close on Escape + lock body scroll while open
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="warranty-title"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20, animation: 'fadeIn 200ms ease-out',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)', color: 'var(--ink)',
+          border: '1px solid var(--hair-strong)', borderRadius: 4,
+          maxWidth: 720, width: '100%', maxHeight: '85vh', overflowY: 'auto',
+          padding: '32px 36px 28px', boxShadow: '0 40px 120px rgba(0,0,0,0.6)',
+          position: 'relative', fontFamily: 'var(--font-ui)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close warranty details"
+          style={{
+            position: 'absolute', top: 14, right: 14,
+            background: 'transparent', border: 'none', color: 'var(--ink-dim)',
+            fontSize: 24, lineHeight: 1, cursor: 'pointer', padding: 8,
+          }}
+        >
+          ×
+        </button>
+
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: accent, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 10 }}>
+          · Lifetime workmanship warranty
+        </div>
+        <h2 id="warranty-title" style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 400, letterSpacing: '-0.02em', margin: '0 0 16px', lineHeight: 1.15 }}>
+          We stand behind every job we do.
+        </h2>
+        <p style={{ color: 'var(--ink-dim)', fontSize: 15, lineHeight: 1.6, margin: '0 0 20px' }}>
+          Just Hail warrants the workmanship on every repair we perform — paintless dent repair, panel replacement, paint, and glass — for as long as you own the vehicle. If something we fixed later shows a defect, we make it right.
+        </p>
+
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, margin: '24px 0 10px' }}>How it works</h3>
+        <ol style={{ color: 'var(--ink)', fontSize: 14, lineHeight: 1.65, paddingLeft: 20, margin: 0 }}>
+          <li style={{ marginBottom: 8 }}>Call Charlie directly at <a href="tel:+15122213013" style={{ color: accent, textDecoration: 'none', fontWeight: 500 }}>(512) 221-3013</a> or email <a href="mailto:info.justhail@gmail.com" style={{ color: accent, textDecoration: 'none', fontWeight: 500 }}>info.justhail@gmail.com</a> with photos and a short description.</li>
+          <li style={{ marginBottom: 8 }}>We'll inspect the issue — at our shop, on-site at your home, or at a qualified dealership body shop of your choice.</li>
+          <li style={{ marginBottom: 8 }}>If the issue is traceable to our original work, we pick one of three remedies:
+            <ul style={{ marginTop: 6, paddingLeft: 20, color: 'var(--ink-dim)' }}>
+              <li style={{ marginBottom: 4 }}>Re-repair it ourselves at no cost to you, or</li>
+              <li style={{ marginBottom: 4 }}>Pre-authorize a dealership quote and pay the shop directly on completion, or</li>
+              <li>Reimburse you after the approved repair is finished.</li>
+            </ul>
+          </li>
+          <li>A Just Hail manager reviews and approves any third-party quote before work is authorized or payment is issued. Approvals are usually same-day.</li>
+        </ol>
+
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, margin: '28px 0 10px' }}>What's covered</h3>
+        <ul style={{ color: 'var(--ink)', fontSize: 14, lineHeight: 1.65, paddingLeft: 20, margin: 0 }}>
+          <li>Workmanship defects on dent, paint, panel, or glass work <strong>that Just Hail performed</strong></li>
+          <li>Issues like paint peel, weld failure, improper panel alignment, or glass seal leakage that trace back to our repair</li>
+          <li>Covered for as long as you own the vehicle — transferable on request (same VIN, new owner)</li>
+        </ul>
+
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, margin: '28px 0 10px' }}>What's not covered</h3>
+        <ul style={{ color: 'var(--ink-dim)', fontSize: 14, lineHeight: 1.65, paddingLeft: 20, margin: 0 }}>
+          <li>New damage from subsequent hail, collision, vandalism, or normal wear and tear</li>
+          <li>Repairs performed by other shops before or after our work</li>
+          <li>Pre-existing conditions disclosed at original estimate and accepted "as-is"</li>
+          <li>Aftermarket modifications, accessories, or non-factory parts installed by others</li>
+          <li>Any claim where the root-cause inspection concludes the issue is unrelated to our repair — in those cases we'll tell you directly and recommend where to go next, but reimbursement does not apply</li>
+        </ul>
+
+        <div style={{
+          marginTop: 28, padding: '18px 20px',
+          background: 'var(--surface-alt)', borderLeft: `3px solid ${accent}`,
+          fontSize: 14, lineHeight: 1.55, color: 'var(--ink)',
+        }}>
+          <strong>Why the manager-approval step?</strong> It protects both of us. It confirms the issue is from our work (not new damage), that the proposed repair is the right fix, and that the quote is fair. That's how we stay accountable for our work — and only our work.
+        </div>
+
+        <p style={{ color: 'var(--ink-dim)', fontSize: 13, lineHeight: 1.6, margin: '24px 0 0', fontStyle: 'italic' }}>
+          18 years. Same phone number. Charlie still answers it. That's the warranty in one sentence.
+        </p>
+      </div>
+    </div>
   );
 }
 
