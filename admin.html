@@ -253,9 +253,16 @@
         <div>
           <div class="eyebrow" style="color: var(--accent);">· Site Traffic</div>
           <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Who's looking?</h1>
-          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Live visitor counts and 7-day trends from Google Analytics 4. Auto-refreshes every 60 seconds.</p>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Live visitor data via Vercel Web Analytics + Speed Insights. Click through for full breakdowns; quick numbers shown below if Google Analytics permission is also configured.</p>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center;">
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <a class="btn" href="https://vercel.com/charlie-ohnstads-projects-a684291d/just-hail/analytics" target="_blank" rel="noopener" style="font-size: 12px; padding: 8px 14px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+            <svg width="12" height="12" viewBox="0 0 76 65" fill="currentColor" style="flex-shrink: 0;"><path d="M37.527 0L75.054 65H0z"/></svg>
+            Web Analytics →
+          </a>
+          <a class="btn btn-ghost" href="https://vercel.com/charlie-ohnstads-projects-a684291d/just-hail/speed-insights" target="_blank" rel="noopener" style="font-size: 12px; padding: 8px 14px; text-decoration: none;">
+            Speed Insights →
+          </a>
           <span id="gaStatus" class="mono dim" style="font-size: 11px; letter-spacing: 0.08em;">Loading…</span>
           <button class="btn btn-ghost" id="gaRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
         </div>
@@ -2423,8 +2430,27 @@ async function loadGaStats() {
     const res = await fetch('/api/admin/ga-stats');
     const json = await res.json();
     if (!res.ok || !json.ok) {
-      const hint = json?.hint ? ' · ' + json.hint : '';
-      if (status) { status.textContent = `Error: ${json?.error || res.status}${hint}`; status.style.color = 'var(--accent)'; }
+      // GA permissions are still being sorted — show a quiet placeholder
+      // instead of a red error. The Vercel Analytics buttons in the header
+      // already give Charlie a working path to live data.
+      if (status) { status.textContent = 'GA pending · use Vercel Analytics'; status.style.color = 'var(--amber)'; }
+      const tilesContainer = document.getElementById('gaStatTiles');
+      if (tilesContainer && !tilesContainer.dataset.placeholderShown) {
+        tilesContainer.dataset.placeholderShown = '1';
+        tilesContainer.innerHTML = `
+          <div class="card" style="padding: 24px 28px; grid-column: 1 / -1; display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 280px;">
+              <div class="mono dim" style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;">Real-time numbers temporarily on Vercel</div>
+              <div style="font-size: 14px; line-height: 1.5; color: var(--ink);">Google Analytics inline-stats are paused while we sort out a permissions issue on Google's side. Vercel Web Analytics is collecting data right now and gives you visitors, page views, top pages, top countries, devices, and Core Web Vitals — click the buttons above.</div>
+            </div>
+            <a class="btn" href="https://vercel.com/charlie-ohnstads-projects-a684291d/just-hail/analytics" target="_blank" rel="noopener" style="text-decoration: none;">Open Vercel Analytics →</a>
+          </div>`;
+      }
+      const topListsHidden = ['gaTopPages', 'gaTopReferrers', 'gaTopCities'];
+      topListsHidden.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.parentElement) el.parentElement.style.display = 'none';
+      });
       return;
     }
     renderGaStats(json.data);
