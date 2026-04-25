@@ -247,6 +247,65 @@
   <!-- Main -->
   <main style="padding: 40px 28px 80px; max-width: 1600px; margin: 0 auto;">
 
+    <!-- ================ TRAFFIC ANALYTICS (GA4) ================ -->
+    <section id="ga-stats" style="margin-bottom: 64px;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <div class="eyebrow" style="color: var(--accent);">· Site Traffic</div>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Who's looking?</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Live visitor counts and 7-day trends from Google Analytics 4. Auto-refreshes every 60 seconds.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <span id="gaStatus" class="mono dim" style="font-size: 11px; letter-spacing: 0.08em;">Loading…</span>
+          <button class="btn btn-ghost" id="gaRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Realtime + 7d + 30d stat tiles -->
+      <div id="gaStatTiles" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="gaActiveNow">—</div>
+          <div class="stat-lbl">Active right now <span style="color: var(--green);">●</span></div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="gaUsers7d">—</div>
+          <div class="stat-lbl">Users · 7 days</div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="gaPageViews7d">—</div>
+          <div class="stat-lbl">Page views · 7 days</div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="gaSessions7d">—</div>
+          <div class="stat-lbl">Sessions · 7 days</div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="gaUsers30d">—</div>
+          <div class="stat-lbl">Users · 30 days</div>
+        </div>
+        <div class="card" style="padding: 20px;">
+          <div class="stat-val" id="gaFormSubmits">—</div>
+          <div class="stat-lbl">Estimate requests · 7d</div>
+        </div>
+      </div>
+
+      <!-- Top lists -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div style="padding: 16px 20px 12px; border-bottom: 1px solid var(--hair); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim);">Top pages · 7d</div>
+          <div id="gaTopPages" style="font-size: 13px;"><div class="empty" style="padding: 30px;">—</div></div>
+        </div>
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div style="padding: 16px 20px 12px; border-bottom: 1px solid var(--hair); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim);">Top sources · 7d</div>
+          <div id="gaTopReferrers" style="font-size: 13px;"><div class="empty" style="padding: 30px;">—</div></div>
+        </div>
+        <div class="card" style="padding: 0; overflow: hidden;">
+          <div style="padding: 16px 20px 12px; border-bottom: 1px solid var(--hair); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim);">Top cities · 7d</div>
+          <div id="gaTopCities" style="font-size: 13px;"><div class="empty" style="padding: 30px;">—</div></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ================ STORM CAMPAIGNS ================ -->
     <section id="camp" style="margin-bottom: 64px;">
       <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
@@ -2341,6 +2400,74 @@ function init() {
   });
   initHailForecast();
   initIhmSessionManager();
+  initGaStats();
+}
+
+// =========================================================
+// GA4 ANALYTICS WIDGET — fetches /api/admin/ga-stats every
+// 60s. Renders realtime, 7d/30d totals, top pages/sources/cities.
+// Endpoint is server-cached for 60s so multiple tabs share data.
+// =========================================================
+let gaPollTimer = null;
+function initGaStats() {
+  loadGaStats();
+  document.getElementById('gaRefreshBtn')?.addEventListener('click', loadGaStats);
+  if (gaPollTimer) clearInterval(gaPollTimer);
+  gaPollTimer = setInterval(loadGaStats, 60_000);
+}
+
+async function loadGaStats() {
+  const status = document.getElementById('gaStatus');
+  if (status) { status.textContent = 'Loading…'; status.style.color = 'var(--ink-dim)'; }
+  try {
+    const res = await fetch('/api/admin/ga-stats');
+    const json = await res.json();
+    if (!res.ok || !json.ok) {
+      const hint = json?.hint ? ' · ' + json.hint : '';
+      if (status) { status.textContent = `Error: ${json?.error || res.status}${hint}`; status.style.color = 'var(--accent)'; }
+      return;
+    }
+    renderGaStats(json.data);
+    if (status) {
+      status.textContent = `Live · updated ${new Date(json.fetched_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      status.style.color = 'var(--green)';
+    }
+  } catch (err) {
+    if (status) { status.textContent = 'Network error'; status.style.color = 'var(--accent)'; }
+  }
+}
+
+function renderGaStats(d) {
+  // Stat tiles
+  setStatVal('gaActiveNow',   d.realtime?.active_users_now);
+  setStatVal('gaUsers7d',     d.last_7_days?.users);
+  setStatVal('gaPageViews7d', d.last_7_days?.page_views);
+  setStatVal('gaSessions7d',  d.last_7_days?.sessions);
+  setStatVal('gaUsers30d',    d.last_30_days?.users);
+  setStatVal('gaFormSubmits', d.form_submits_last_7_days);
+
+  // Top lists
+  document.getElementById('gaTopPages').innerHTML       = renderTopList(d.top_pages,     (r) => ({ label: r.pagePath || '/', value: Math.round(r.screenPageViews), unit: 'views' }));
+  document.getElementById('gaTopReferrers').innerHTML   = renderTopList(d.top_referrers, (r) => ({ label: `${r.sessionSource || 'direct'}${r.sessionMedium && r.sessionMedium !== '(none)' ? ' · ' + r.sessionMedium : ''}`, value: Math.round(r.sessions), unit: 'sessions' }));
+  document.getElementById('gaTopCities').innerHTML      = renderTopList(d.top_cities,    (r) => ({ label: r.city ? `${r.city}${r.region && r.region !== '(not set)' ? ', ' + r.region : ''}` : '(unknown)', value: Math.round(r.totalUsers), unit: 'users' }));
+}
+
+function setStatVal(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (val == null) { el.textContent = '—'; return; }
+  el.textContent = Number(val).toLocaleString();
+}
+
+function renderTopList(rows, mapFn) {
+  if (!rows || !rows.length) return '<div class="empty" style="padding: 30px;">No data yet — GA4 takes ~24h to populate after install.</div>';
+  return rows.map((row) => {
+    const { label, value, unit } = mapFn(row);
+    return `<div style="padding: 12px 20px; border-bottom: 1px solid var(--hair); display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+      <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+      <div class="mono dim" style="font-size: 11px; flex-shrink: 0;">${value.toLocaleString()} ${unit}</div>
+    </div>`;
+  }).join('');
 }
 
 // =========================================================
