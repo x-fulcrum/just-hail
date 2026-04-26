@@ -35,8 +35,26 @@
     },
     "api/admin/strategist.js": {
       "maxDuration": 60
+    },
+    "api/admin/lindy.js": {
+      "maxDuration": 30
+    },
+    "api/admin/inbox.js": {
+      "maxDuration": 15
+    },
+    "api/admin/assistant.js": {
+      "maxDuration": 30
+    },
+    "api/cron/daily-recap.js": {
+      "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/daily-recap",
+      "schedule": "0 23 * * *"
+    }
+  ],
   "cleanUrls": true,
   "headers": [
     {

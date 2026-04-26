@@ -122,6 +122,55 @@
   #stratSend { padding: 10px 16px; background: var(--accent); color: #0a0b10; border: none; border-radius: 2px; font-weight: 500; cursor: pointer; font-size: 13px; }
   #stratSend:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  /* ---- LINDY ASSISTANT BRIDGE — bottom-LEFT pill ---- */
+  #lindyToggle {
+    position: fixed; left: 24px; bottom: 24px; z-index: 70;
+    padding: 14px 20px; background: var(--surface-2); color: var(--ink);
+    border: 1px solid var(--hair-strong); border-radius: 40px; cursor: pointer;
+    font-family: var(--font-ui); font-weight: 600; font-size: 13px;
+    letter-spacing: 0.02em; box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+    display: flex; align-items: center; gap: 8px;
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 140ms;
+  }
+  #lindyToggle:hover { transform: translateY(-1px); border-color: var(--green); box-shadow: 0 10px 32px rgba(57,215,170,0.18); }
+  #lindyToggle .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.8s ease-in-out infinite; }
+  #lindyPanel {
+    position: fixed; left: 24px; bottom: 24px; z-index: 71;
+    width: 420px; max-width: calc(100vw - 48px);
+    height: 600px; max-height: calc(100vh - 48px);
+    background: var(--surface); border: 1px solid var(--hair-strong);
+    border-radius: 4px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; overflow: hidden;
+    animation: fadeIn 200ms ease-out;
+  }
+  #lindyPanel header {
+    padding: 14px 18px; border-bottom: 1px solid var(--hair);
+    display: flex; align-items: center; gap: 12px; background: var(--surface-2);
+  }
+  #lindyPanel header .title { font-family: var(--font-display); font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
+  #lindyPanel header .subtitle { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); }
+  #lindyPanel header button { background: transparent; border: none; color: var(--ink-dim); cursor: pointer; font-size: 22px; line-height: 1; padding: 4px 8px; border-radius: 2px; }
+  #lindyPanel header button:hover { color: var(--ink); background: var(--surface); }
+  #lindyBody { flex: 1; overflow-y: auto; padding: 18px; scroll-behavior: smooth; }
+  #lindyBody::-webkit-scrollbar { width: 6px; }
+  #lindyBody::-webkit-scrollbar-thumb { background: var(--hair-strong); border-radius: 3px; }
+  .lindy-msg { margin-bottom: 14px; font-size: 13px; line-height: 1.55; }
+  .lindy-msg.user { display: flex; justify-content: flex-end; }
+  .lindy-msg.user .bubble { max-width: 82%; padding: 10px 14px; background: var(--green); color: #0a0b10; border-radius: 12px 12px 2px 12px; font-weight: 500; }
+  .lindy-msg.assistant .bubble { padding: 10px 14px; background: var(--surface-2); border: 1px solid var(--hair); border-radius: 12px 12px 12px 2px; color: var(--ink); white-space: pre-wrap; word-wrap: break-word; }
+  .lindy-msg.pending .bubble { padding: 10px 14px; background: var(--surface-2); border: 1px dashed var(--hair-strong); border-radius: 12px 12px 12px 2px; color: var(--ink-dim); font-style: italic; font-size: 12px; }
+  .lindy-msg .meta { font-family: var(--font-mono); font-size: 10px; color: var(--ink-dim); margin-top: 4px; padding: 0 4px; letter-spacing: 0.06em; }
+  #lindyWelcome { padding: 4px 2px; }
+  #lindyWelcome h3 { font-family: var(--font-display); font-size: 22px; margin: 0 0 6px; font-weight: 400; letter-spacing: -0.01em; }
+  #lindyWelcome p { margin: 0 0 14px; color: var(--ink-dim); font-size: 12px; line-height: 1.5; }
+  .lindy-starter { display: block; width: 100%; text-align: left; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); border: 1px solid var(--hair); border-radius: 2px; color: var(--ink); cursor: pointer; font-size: 12px; font-family: var(--font-ui); transition: border-color 140ms; }
+  .lindy-starter:hover { border-color: var(--green); }
+  #lindyForm { padding: 12px 14px; border-top: 1px solid var(--hair); display: flex; gap: 8px; align-items: flex-end; background: var(--surface-2); }
+  #lindyInput { flex: 1; resize: none; background: var(--surface); color: var(--ink); border: 1px solid var(--hair-strong); border-radius: 2px; padding: 10px 12px; font-family: var(--font-ui); font-size: 13px; min-height: 38px; max-height: 140px; line-height: 1.4; }
+  #lindyInput:focus { outline: none; border-color: var(--green); }
+  #lindySend { padding: 10px 16px; background: var(--green); color: #0a0b10; border: none; border-radius: 2px; font-weight: 500; cursor: pointer; font-size: 13px; }
+  #lindySend:disabled { opacity: 0.5; cursor: not-allowed; }
+
   /* ============================================================
      FORECAST MAP FULLSCREEN MODE
      Click the ⛶ button to make #fcMap fill the viewport; page
@@ -507,6 +556,62 @@
       </div>
     </section>
 
+    <!-- ================ INBOX (Lindy SMS + Calls) ================ -->
+    <section id="inbox" style="margin-bottom: 64px;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <div class="eyebrow" style="color: var(--accent);">· Inbox</div>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Replies &amp; calls</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Every SMS reply and call leg from your Lindy agents — receptionist, outbound caller, voicemail dropper. Last 7 days.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <div id="inboxTabs" style="display: flex; gap: 0; border: 1px solid var(--hair-strong); border-radius: 2px; overflow: hidden;">
+            <button class="inbox-tab" data-tab="sms" style="padding: 8px 14px; font-size: 11px; background: var(--accent); color: #0a0b10; border: none; font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;">Replies <span class="mono dim" id="inboxSmsCount" style="margin-left: 6px;">0</span></button>
+            <button class="inbox-tab" data-tab="call" style="padding: 8px 14px; font-size: 11px; background: transparent; color: var(--ink-dim); border: none; border-left: 1px solid var(--hair-strong); font-family: var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;">Calls <span class="mono dim" id="inboxCallCount" style="margin-left: 6px;">0</span></button>
+          </div>
+          <label class="mono dim" style="font-size: 11px; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+            <input type="checkbox" id="inboxHotOnly" style="width: auto; margin: 0;" /> Hot only
+          </label>
+          <button class="btn btn-ghost" id="inboxRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Inbox table -->
+      <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="max-height: 520px; overflow-y: auto;">
+          <table id="inboxTable">
+            <thead>
+              <tr id="inboxHeadSms">
+                <th style="width: 110px;">When</th>
+                <th style="width: 70px;">Dir</th>
+                <th>Lead / message</th>
+                <th style="width: 100px;">Class</th>
+                <th style="width: 130px; text-align: right;">Actions</th>
+              </tr>
+              <tr id="inboxHeadCall" style="display: none;">
+                <th style="width: 110px;">When</th>
+                <th style="width: 80px;">Type</th>
+                <th>Lead / outcome</th>
+                <th style="width: 80px;">Length</th>
+                <th style="width: 130px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="inboxBody">
+              <tr><td colspan="5" class="empty" style="padding: 40px;">
+                <div class="big">Inbox is quiet.</div>
+                <div>Once Lindy starts answering calls and replies, they'll land here.</div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <div class="mono dim" style="font-size: 11px;">Polls /api/admin/inbox every 30s</div>
+        <div class="mono dim" style="font-size: 11px;">Updated <span id="inboxLastSync">never</span></div>
+      </div>
+    </section>
+
     <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 40px; gap: 24px; flex-wrap: wrap;">
       <div>
         <div class="eyebrow">· Lead intake</div>
@@ -607,6 +712,36 @@
     <form id="stratForm">
       <textarea id="stratInput" rows="1" placeholder="Ask the strategist…" autocomplete="off"></textarea>
       <button type="submit" id="stratSend">Send</button>
+    </form>
+  </div>
+
+  <!-- ================ LINDY ASSISTANT BRIDGE WIDGET ================ -->
+  <button id="lindyToggle" type="button" title="Talk to your Lindy bridge agent — same agent that texts you the morning brief">
+    <span class="dot"></span> 💬 Lindy
+  </button>
+  <div id="lindyPanel" style="display: none;">
+    <header>
+      <div style="flex: 1;">
+        <div class="title">Lindy Assistant</div>
+        <div class="subtitle">· bridge agent · 500+ tools</div>
+      </div>
+      <button id="lindyClearBtn" type="button" title="Start a new thread">↺</button>
+      <button id="lindyCloseBtn" type="button" title="Close">×</button>
+    </header>
+    <div id="lindyBody">
+      <div id="lindyWelcome">
+        <h3>What can Lindy do for you?</h3>
+        <p>This is the same Lindy that SMSes you in the morning. Anything you'd ask it via iMessage, you can ask here. Replies land async (usually 5-30 sec).</p>
+        <button class="lindy-starter" data-q="Send Charlie a heads-up SMS that the new admin chat works.">Test SMS to Charlie</button>
+        <button class="lindy-starter" data-q="Look up the latest hail news in Central Texas in the last 7 days and summarize.">Research recent Central TX hail</button>
+        <button class="lindy-starter" data-q="Draft an email to me with a 3-bullet rundown of what hit my inbox today.">Inbox triage email</button>
+        <button class="lindy-starter" data-q="Set a reminder for me at 5pm today to check on hot leads.">Set a 5pm reminder</button>
+      </div>
+      <div id="lindyMessages"></div>
+    </div>
+    <form id="lindyForm">
+      <textarea id="lindyInput" rows="1" placeholder="Tell Lindy what to do…" autocomplete="off"></textarea>
+      <button type="submit" id="lindySend">Send</button>
     </form>
   </div>
 </div>
@@ -722,6 +857,191 @@ function startCmdPolling() {
   cmdPollTimer = setInterval(pollCmd, CMD_POLL_MS);
 }
 document.getElementById('cmdRefreshBtn').addEventListener('click', pollCmd);
+
+// =========================================================
+// INBOX — Lindy SMS replies + call logs (Phase 1 Lindy)
+// =========================================================
+const INBOX_POLL_MS  = 30_000;
+const inboxBodyEl    = document.getElementById('inboxBody');
+const inboxHeadSms   = document.getElementById('inboxHeadSms');
+const inboxHeadCall  = document.getElementById('inboxHeadCall');
+const inboxSmsCount  = document.getElementById('inboxSmsCount');
+const inboxCallCount = document.getElementById('inboxCallCount');
+const inboxLastSync  = document.getElementById('inboxLastSync');
+const inboxHotOnly   = document.getElementById('inboxHotOnly');
+let inboxTab = 'sms';
+let inboxData = { sms: [], calls: [], counts: {} };
+let inboxPollTimer = null;
+
+function fmtAgo(iso) {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return Math.floor(ms / 1000) + 's ago';
+  if (ms < 3_600_000) return Math.floor(ms / 60_000) + 'm ago';
+  if (ms < 86_400_000) return Math.floor(ms / 3_600_000) + 'h ago';
+  return Math.floor(ms / 86_400_000) + 'd ago';
+}
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function classChipColor(c) {
+  switch (c) {
+    case 'HOT':          return 'color: var(--accent); border-color: var(--accent);';
+    case 'WARM':         return 'color: var(--amber); border-color: var(--amber);';
+    case 'QUESTION':     return 'color: var(--green); border-color: var(--green);';
+    case 'AUTO_REPLY':   return 'color: var(--ink-dim);';
+    case 'OPT_OUT':      return 'color: var(--accent); border-color: var(--accent);';
+    case 'WRONG_PERSON': return 'color: var(--ink-dim);';
+    default:             return '';
+  }
+}
+
+function renderInbox() {
+  if (inboxTab === 'sms') {
+    inboxHeadSms.style.display = '';
+    inboxHeadCall.style.display = 'none';
+    let rows = inboxData.sms || [];
+    if (inboxHotOnly.checked) rows = rows.filter((r) => r.hot_lead_flag);
+    if (!rows.length) {
+      inboxBodyEl.innerHTML = '<tr><td colspan="5" class="empty" style="padding: 40px;"><div class="big">No replies.</div></td></tr>';
+      return;
+    }
+    inboxBodyEl.innerHTML = rows.map((r) => {
+      const lead = r.leads || {};
+      const leadName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '(unknown)';
+      const dirChip = r.direction === 'inbound'
+        ? `<span class="chip" style="color: var(--green); border-color: var(--green);">IN</span>`
+        : `<span class="chip" style="color: var(--ink-dim);">OUT</span>`;
+      const cls = r.classification ? `<span class="chip" style="${classChipColor(r.classification)}">${escHtml(r.classification)}</span>` : '';
+      const actions = r.lead_id ? `
+        <button class="btn btn-ghost lindy-action" data-action="call_lead" data-lead-id="${r.lead_id}" style="font-size: 10px; padding: 4px 8px;">📞</button>
+        <button class="btn btn-ghost lindy-action" data-action="enrich" data-lead-id="${r.lead_id}" style="font-size: 10px; padding: 4px 8px;">🔎</button>
+      ` : '';
+      return `
+        <tr>
+          <td><div class="mono dim" style="font-size: 11px;">${fmtAgo(r.created_at)}</div></td>
+          <td>${dirChip}</td>
+          <td>
+            <div style="font-weight: 500;">${escHtml(leadName)} <span class="mono dim" style="font-size: 11px;">· ${escHtml(r.peer_number || '')}</span></div>
+            <div style="margin-top: 4px; font-size: 13px; color: var(--ink); line-height: 1.45;">${escHtml(r.body || '').slice(0, 240)}</div>
+            ${lead.street ? `<div class="mono dim" style="font-size: 10px; margin-top: 4px;">${escHtml(lead.street)}, ${escHtml(lead.city || '')}</div>` : ''}
+          </td>
+          <td>${cls}</td>
+          <td style="text-align: right;">${actions}</td>
+        </tr>
+      `;
+    }).join('');
+  } else {
+    inboxHeadSms.style.display = 'none';
+    inboxHeadCall.style.display = '';
+    let rows = inboxData.calls || [];
+    if (inboxHotOnly.checked) rows = rows.filter((r) => r.hot_lead_flag || r.booked_inspection);
+    if (!rows.length) {
+      inboxBodyEl.innerHTML = '<tr><td colspan="5" class="empty" style="padding: 40px;"><div class="big">No calls.</div></td></tr>';
+      return;
+    }
+    inboxBodyEl.innerHTML = rows.map((r) => {
+      const lead = r.leads || {};
+      const leadName = [lead.first_name, lead.last_name].filter(Boolean).join(' ') || '(unknown)';
+      const sourceLabels = {
+        lindy_inbound:   '<span class="chip" style="color: var(--green); border-color: var(--green);">IN</span>',
+        lindy_outbound:  '<span class="chip" style="color: var(--amber); border-color: var(--amber);">OUT</span>',
+        lindy_voicemail: '<span class="chip" style="color: var(--ink-dim);">VM</span>',
+        lindy_recap:     '<span class="chip" style="color: var(--ink-dim);">RECAP</span>',
+      };
+      const flags = [];
+      if (r.hot_lead_flag) flags.push('<span class="chip new">HOT</span>');
+      if (r.booked_inspection) flags.push('<span class="chip scheduled">BOOKED</span>');
+      if (r.opt_out_flag) flags.push('<span class="chip" style="color: var(--accent); border-color: var(--accent);">OPT-OUT</span>');
+      const actions = r.lead_id ? `
+        <button class="btn btn-ghost lindy-action" data-action="call_lead" data-lead-id="${r.lead_id}" style="font-size: 10px; padding: 4px 8px;">↻ Call</button>
+      ` : '';
+      const peer = r.source === 'lindy_inbound' ? r.from_number : r.to_number;
+      return `
+        <tr>
+          <td><div class="mono dim" style="font-size: 11px;">${fmtAgo(r.created_at)}</div></td>
+          <td>${sourceLabels[r.source] || ('<span class="chip">' + escHtml(r.source) + '</span>')}</td>
+          <td>
+            <div style="font-weight: 500;">${escHtml(leadName)} <span class="mono dim" style="font-size: 11px;">· ${escHtml(peer || '')}</span></div>
+            <div class="mono dim" style="font-size: 11px; margin-top: 2px;">${escHtml(r.outcome || '—')}</div>
+            ${r.summary ? `<div style="margin-top: 6px; font-size: 12px; color: var(--ink-dim); line-height: 1.45;">${escHtml(r.summary).slice(0, 220)}</div>` : ''}
+            ${flags.length ? `<div style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;">${flags.join('')}</div>` : ''}
+          </td>
+          <td><div class="mono dim" style="font-size: 11px;">${r.duration_seconds ? r.duration_seconds + 's' : '—'}</div></td>
+          <td style="text-align: right;">${actions}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+}
+
+async function pollInbox() {
+  try {
+    const r = await fetch('/api/admin/inbox?type=all&limit=80');
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'inbox fetch failed');
+    inboxData = j;
+    inboxSmsCount.textContent  = j.counts?.sms_total || 0;
+    inboxCallCount.textContent = j.counts?.calls_total || 0;
+    inboxLastSync.textContent  = new Date().toLocaleTimeString();
+    renderInbox();
+  } catch (e) {
+    console.warn('[inbox] poll failed:', e);
+  }
+}
+
+// Tab switching
+document.querySelectorAll('.inbox-tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    inboxTab = btn.dataset.tab;
+    document.querySelectorAll('.inbox-tab').forEach((b) => {
+      const active = b.dataset.tab === inboxTab;
+      b.style.background = active ? 'var(--accent)' : 'transparent';
+      b.style.color = active ? '#0a0b10' : 'var(--ink-dim)';
+    });
+    renderInbox();
+  });
+});
+inboxHotOnly.addEventListener('change', renderInbox);
+document.getElementById('inboxRefreshBtn').addEventListener('click', pollInbox);
+
+// Action buttons in inbox rows + lead drawer
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.lindy-action');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const action = btn.dataset.action;
+  const lead_id = btn.dataset.leadId;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch('/api/admin/lindy', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, lead_id: Number(lead_id) }),
+    });
+    const j = await r.json();
+    if (j.ok) {
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
+      pollInbox();
+    } else {
+      alert('Action failed: ' + (j.error || 'unknown'));
+      btn.textContent = orig; btn.disabled = false;
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+    btn.textContent = orig; btn.disabled = false;
+  }
+});
+
+function startInboxPolling() {
+  pollInbox();
+  clearInterval(inboxPollTimer);
+  inboxPollTimer = setInterval(pollInbox, INBOX_POLL_MS);
+}
 
 // =========================================================
 // STORM CAMPAIGNS — virtual door knock
@@ -1039,6 +1359,8 @@ function showCampaignDrawer(campaign, leads) {
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
           <button class="btn" id="draftSampleBtn" title="Generate drafts for the first 3 leads so you can see the quality before batching" style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Draft sample (3)</button>
+          <button class="btn btn-ghost" id="stormBlastBtn" title="Dispatch this campaign to jh-storm-broadcaster. It will fan out into voice + voicemail tiers based on lead priority." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">⚡ Storm blast →</button>
+          <button class="btn btn-ghost" id="voicemailBlastBtn" title="Send a pre-recorded voicemail to every lead in this campaign via jh-voicemail-dropper. Requires an audio URL." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">📼 Voicemail blast →</button>
           <button class="btn btn-ghost" id="pushToGhlBtn" title="Push every lead in this campaign up to GHL as a contact with the jh-new-lead tag. Your GHL workflow picks it up from there." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Push to GHL →</button>
           <button class="btn btn-ghost" id="drawerCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
         </div>
@@ -1051,6 +1373,8 @@ function showCampaignDrawer(campaign, leads) {
   document.getElementById('drawerCloseBtn').addEventListener('click', () => { drawerHost.innerHTML = ''; });
   document.getElementById('draftSampleBtn').addEventListener('click', () => draftSample(campaign.id));
   document.getElementById('pushToGhlBtn').addEventListener('click', () => pushCampaignToGhl(campaign.id));
+  document.getElementById('stormBlastBtn').addEventListener('click', () => dispatchStormBlast(campaign.id));
+  document.getElementById('voicemailBlastBtn').addEventListener('click', () => dispatchVoicemailBlast(campaign.id));
 
   if (hasPolygon) renderDrawerMap(campaign.target_input.polygon);
   renderDrawerLeads();
@@ -1168,6 +1492,80 @@ async function pushCampaignToGhl(campaignId) {
   }
 }
 
+// =========================================================
+// LINDY DISPATCH — campaign-level actions (Phase 1)
+// =========================================================
+async function dispatchStormBlast(campaignId) {
+  if (!confirm(
+    `Storm blast campaign #${campaignId}?\n\n` +
+    `Dispatches to jh-storm-broadcaster which will fan out into:\n` +
+    `  • Top 50 priority leads → outbound calls\n` +
+    `  • Next 150 → ringless voicemail drops\n` +
+    `  • Rest → email cadence (no extra cost)\n\n` +
+    `This is a live action. Real calls will be placed.`
+  )) return;
+  const btn = document.getElementById('stormBlastBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  try {
+    const res = await fetch('/api/admin/lindy', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'storm_blast', campaign_id: campaignId }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert(`✓ Storm blast dispatched.\nLead count: ${data.lead_count}\nLindy job ID: ${data.job_id}`);
+    } else {
+      alert('Failed: ' + (data.error || 'unknown'));
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '⚡ Storm blast →';
+  }
+}
+
+async function dispatchVoicemailBlast(campaignId) {
+  const url = prompt(
+    'Voicemail audio URL (mp3, ~25-30 sec):\n\n' +
+    'Record once in Twilio Console or upload to your storage,\n' +
+    'paste the public URL here.'
+  );
+  if (!url) return;
+  if (!/^https?:\/\//.test(url)) {
+    alert('URL must start with http:// or https://');
+    return;
+  }
+  if (!confirm(`Drop voicemail to every lead in campaign #${campaignId}?\n\nAudio: ${url}\n\nThis is a live action.`)) return;
+  const btn = document.getElementById('voicemailBlastBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  try {
+    const res = await fetch('/api/admin/lindy', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'voicemail',
+        campaign_id: campaignId,
+        voicemail_audio_url: url,
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert(`✓ Voicemail blast dispatched to ${data.lead_count} leads.\nLindy job ID: ${data.job_id}`);
+    } else {
+      alert('Failed: ' + (data.error || 'unknown'));
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '📼 Voicemail blast →';
+  }
+}
+
 async function sendEmailDraft(draftId, btn) {
   if (!confirm('Send this email now? This is a REAL email to the lead — not a test.')) return;
   btn.disabled = true;
@@ -1210,9 +1608,15 @@ function renderLeadCard(l) {
             ${l.email ? `<span style="color: var(--ink); margin-left: 12px;">✉ ${escapeHtml(l.email)}</span>` : ''}
           </div>
         </div>
-        <button class="btn btn-ghost lead-draft-btn" data-lead-id="${l.id}" style="font-size: 11px; padding: 6px 12px; white-space: nowrap;">
-          ${hasAnyDraft ? 'Re-draft' : 'Draft with Claude'}
-        </button>
+        <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
+          <button class="btn btn-ghost lead-draft-btn" data-lead-id="${l.id}" style="font-size: 11px; padding: 6px 12px; white-space: nowrap;">
+            ${hasAnyDraft ? 'Re-draft' : 'Draft with Claude'}
+          </button>
+          <div style="display: flex; gap: 4px;" title="Lindy actions">
+            ${phone ? `<button class="lindy-action btn btn-ghost" data-action="call_lead" data-lead-id="${l.id}" title="Have Lindy call this lead now" style="font-size: 10px; padding: 4px 8px;">📞 Call</button>` : ''}
+            <button class="lindy-action btn btn-ghost" data-action="enrich" data-lead-id="${l.id}" title="Run Lindy enrichment (public records + social)" style="font-size: 10px; padding: 4px 8px;">🔎 Enrich</button>
+          </div>
+        </div>
       </div>
       ${hasAnyDraft ? `
         <div style="margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
@@ -2024,6 +2428,7 @@ function showApp() {
   app.style.display = 'block';
   init();
   startCmdPolling();
+  startInboxPolling();
   renderCampaigns();
 }
 function showGate() {
@@ -3101,6 +3506,222 @@ function fmtSpc(iso) {
       if (m.role === 'user') addUserMessage(m.content);
       else if (m.role === 'assistant') addAssistantMessage(m.content, []);
     }
+  }
+})();
+
+// =========================================================
+// LINDY ASSISTANT BRIDGE WIDGET
+// =========================================================
+// Mirrors the Strategist widget but talks to the bridge Lindy agent
+// instead of Claude. Replies are async — we POST to /api/admin/assistant
+// (which dispatches to Lindy) and then poll the same endpoint to pick
+// up the agent's callback. Keeps thread state via a sessionStorage
+// thread_id so a refresh doesn't blow away the conversation.
+// =========================================================
+(function initLindyBridge() {
+  const toggle   = document.getElementById('lindyToggle');
+  const panel    = document.getElementById('lindyPanel');
+  const closeBtn = document.getElementById('lindyCloseBtn');
+  const clearBtn = document.getElementById('lindyClearBtn');
+  const body     = document.getElementById('lindyBody');
+  const welcome  = document.getElementById('lindyWelcome');
+  const messages = document.getElementById('lindyMessages');
+  const form     = document.getElementById('lindyForm');
+  const input    = document.getElementById('lindyInput');
+  const sendBtn  = document.getElementById('lindySend');
+  if (!toggle || !panel) {
+    console.warn('[Lindy] bridge widget DOM not found');
+    return;
+  }
+  toggle.style.display = 'flex';
+
+  const OPEN_KEY   = 'jh-lindy-open';
+  const THREAD_KEY = 'jh-lindy-thread';
+  let threadId = sessionStorage.getItem(THREAD_KEY) || null;
+  let pollTimer = null;
+  let pendingJobs = new Set(); // job_ids we're waiting on a callback for
+
+  function openPanel() {
+    panel.style.display = 'flex';
+    toggle.style.display = 'none';
+    sessionStorage.setItem(OPEN_KEY, '1');
+    setTimeout(() => { input.focus(); body.scrollTop = body.scrollHeight; }, 60);
+    if (threadId) loadThread(threadId);
+    startPolling();
+  }
+  function closePanel() {
+    panel.style.display = 'none';
+    toggle.style.display = 'flex';
+    sessionStorage.removeItem(OPEN_KEY);
+    stopPolling();
+  }
+  toggle.addEventListener('click', openPanel);
+  closeBtn.addEventListener('click', closePanel);
+  if (sessionStorage.getItem(OPEN_KEY) === '1') openPanel();
+
+  clearBtn.addEventListener('click', () => {
+    if (!confirm('Start a new thread? Old messages stay in the DB but disappear from chat.')) return;
+    threadId = null;
+    sessionStorage.removeItem(THREAD_KEY);
+    messages.innerHTML = '';
+    welcome.style.display = 'block';
+    pendingJobs.clear();
+  });
+
+  welcome.querySelectorAll('.lindy-starter').forEach((b) => {
+    b.addEventListener('click', () => {
+      input.value = b.dataset.q || b.textContent;
+      autogrow();
+      send();
+    });
+  });
+
+  function autogrow() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(140, input.scrollHeight) + 'px';
+  }
+  input.addEventListener('input', autogrow);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+  form.addEventListener('submit', (e) => { e.preventDefault(); send(); });
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+  function fmtTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function addUserMessage(text, ts) {
+    welcome.style.display = 'none';
+    const div = document.createElement('div');
+    div.className = 'lindy-msg user';
+    div.innerHTML = `<div><div class="bubble">${escHtml(text)}</div><div class="meta" style="text-align: right;">${fmtTime(ts || new Date().toISOString())}</div></div>`;
+    messages.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+  }
+  function addPendingMessage(jobId) {
+    const div = document.createElement('div');
+    div.className = 'lindy-msg pending';
+    div.dataset.jobId = jobId;
+    div.innerHTML = `<div class="bubble"><span class="spin"></span> Lindy is working on it…</div>`;
+    messages.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+  }
+  function addAssistantMessage(text, jobId, ts) {
+    welcome.style.display = 'none';
+    // Replace pending placeholder if it exists.
+    const pending = messages.querySelector(`.lindy-msg.pending[data-job-id="${jobId}"]`);
+    const div = document.createElement('div');
+    div.className = 'lindy-msg assistant';
+    div.dataset.jobId = jobId;
+    div.innerHTML = `<div><div class="bubble">${escHtml(text || '(no response)')}</div><div class="meta">Lindy · ${fmtTime(ts || new Date().toISOString())}</div></div>`;
+    if (pending) pending.replaceWith(div);
+    else messages.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+  }
+  function markFailed(jobId, errorText) {
+    const pending = messages.querySelector(`.lindy-msg.pending[data-job-id="${jobId}"]`);
+    const div = document.createElement('div');
+    div.className = 'lindy-msg assistant';
+    div.dataset.jobId = jobId;
+    div.innerHTML = `<div><div class="bubble" style="border-color: var(--accent); color: var(--accent);">⚠ ${escHtml(errorText || 'Lindy reported an error')}</div><div class="meta">Failed</div></div>`;
+    if (pending) pending.replaceWith(div);
+    else messages.appendChild(div);
+  }
+
+  async function send() {
+    const task = input.value.trim();
+    if (!task) return;
+    input.value = '';
+    autogrow();
+    sendBtn.disabled = true;
+
+    addUserMessage(task);
+
+    try {
+      const r = await fetch('/api/admin/assistant', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ task, thread_id: threadId }),
+      });
+      const j = await r.json();
+      if (!j.ok) {
+        markFailed(0, j.error || 'dispatch failed');
+        return;
+      }
+      if (!threadId) {
+        threadId = j.thread_id;
+        sessionStorage.setItem(THREAD_KEY, threadId);
+      }
+      pendingJobs.add(j.lindy_job_id);
+      addPendingMessage(j.lindy_job_id);
+      startPolling(); // make sure poll is running
+    } catch (err) {
+      markFailed(0, err.message);
+    } finally {
+      sendBtn.disabled = false;
+    }
+  }
+
+  async function loadThread(tid) {
+    try {
+      const r = await fetch(`/api/admin/assistant?thread_id=${encodeURIComponent(tid)}&limit=80`);
+      const j = await r.json();
+      if (!j.ok) return;
+      messages.innerHTML = '';
+      pendingJobs.clear();
+      for (const m of j.messages || []) {
+        addUserMessage(m.user, m.ts);
+        if (m.assistant) {
+          addAssistantMessage(m.assistant, m.job_id, m.replied_at);
+        } else if (m.status === 'failed') {
+          markFailed(m.job_id, 'Lindy returned an error');
+        } else {
+          addPendingMessage(m.job_id);
+          pendingJobs.add(m.job_id);
+        }
+      }
+    } catch (e) {
+      console.warn('[Lindy] thread load failed:', e);
+    }
+  }
+
+  async function pollOnce() {
+    if (!threadId || !pendingJobs.size) return;
+    try {
+      const r = await fetch(`/api/admin/assistant?thread_id=${encodeURIComponent(threadId)}&limit=80`);
+      const j = await r.json();
+      if (!j.ok) return;
+      for (const m of j.messages || []) {
+        if (pendingJobs.has(m.job_id)) {
+          if (m.assistant) {
+            addAssistantMessage(m.assistant, m.job_id, m.replied_at);
+            pendingJobs.delete(m.job_id);
+          } else if (m.status === 'failed') {
+            markFailed(m.job_id, 'Lindy returned an error');
+            pendingJobs.delete(m.job_id);
+          }
+        }
+      }
+      if (!pendingJobs.size) stopPolling();
+    } catch (e) {
+      console.warn('[Lindy] poll failed:', e);
+    }
+  }
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(pollOnce, 3000);
+    pollOnce();
+  }
+  function stopPolling() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 })();
 </script>

@@ -66,12 +66,30 @@ Engagement (write):
 - push_lead_to_ghl         : upsert a GHL contact for a lead (adds default tags + triggers workflows). Reversible; safe to call when the user asks.
 - tag_ghl_contact          : add or remove tags on a GHL contact. Safe; used to trigger or pause GHL workflows.
 
+Lindy.ai bridge agent (PRIMARY delegation channel):
+- delegate_to_assistant    : Hand any free-form task to Charlie's bridge Lindy agent. The bridge has dynamic tool-loading (Gmail, Calendar, web search, SMS, voice, 500+ integrations). USE THIS as the default tool for: "look up X person", "send Charlie a heads-up SMS", "draft and send email to Y", "schedule a meeting", "research this neighborhood for hail damage", "remind me at 3pm to call back". Cheaper + faster than wiring dedicated tools for one-off tasks. Set wait_for_result:true when Charlie expects a synchronous answer in chat.
+
+Lindy.ai specialized agents (high-volume work the bridge can't handle alone):
+- lindy_call_lead          : dispatch jh-outbound-caller to LIVE-call a lead in Charlie's voice. REAL CALL goes out. REQUIRES confirm:true AND explicit chat confirmation.
+- lindy_enrich_lead        : run jh-enricher (public-records research). Read-only, free, ~2-3 minutes. Result lands in enrichment_results table.
+- lindy_storm_blast        : dispatch a campaign to jh-storm-broadcaster which fans out into voice + voicemail tiers. REAL CALLS placed. REQUIRES confirm:true.
+- lindy_voicemail_blast    : drop pre-recorded voicemail to every (non-opted-out) lead in a campaign via jh-voicemail-dropper. Needs a public mp3 URL. REAL voicemails. REQUIRES confirm:true.
+- lindy_recap_now          : trigger jh-recap-caller to call Charlie immediately with today's stats (cron normally fires this at 6pm CT). REQUIRES confirm:true.
+- query_inbox              : read recent SMS replies + call logs from Lindy agents — "what happened today" / scan for hot leads.
+
+WHICH LINDY TOOL TO USE:
+- For ONE-OFF tasks Charlie says ("text me when X", "find email for Y", "set reminder", "research Z") → use delegate_to_assistant
+- For DEDICATED PIPELINE actions (call THIS lead, blast THIS campaign) → use the specialized lindy_* tools
+- For RESEARCH that needs structure (county appraisal lookup) → use lindy_enrich_lead
+
 ENGAGEMENT SAFETY RULES (NON-NEGOTIABLE):
-- Drafting is fine to do proactively when Charlie asks for outreach content.
+- Drafting + enrichment are fine to do proactively when Charlie asks. Drafts don't send. Enrichment is read-only research.
 - NEVER approve a draft without Charlie explicitly saying "approve" or similar.
 - NEVER send an email without Charlie explicitly saying "send" and specifying which draft. Recap the subject + first line before sending, so Charlie can veto.
-- Always surface the draft_id + who it's going to + subject + preview of the first ~120 chars before asking for send confirmation.
-- If Charlie says "send all approved drafts" or "send to the whole campaign", REFUSE until you've listed every recipient for him to eyeball. No blast sends without per-email visibility.
+- NEVER call lindy_call_lead, lindy_storm_blast, lindy_voicemail_blast, or lindy_recap_now without explicit user authorization in the current chat. Always recap (lead/campaign name, count, what will happen) and wait for "do it" / "go" / "call them" before firing.
+- Always surface the draft_id (or lead_id/campaign_id) + who it's going to + subject/audio + preview before asking for confirmation.
+- If Charlie says "send all approved drafts" or "blast the whole campaign", REFUSE until you've listed every recipient for him to eyeball. No blast sends without per-recipient visibility.
+- TCPA quiet hours: do not initiate outbound voice or SMS between 9pm and 8am in the recipient's local time zone. If asked during quiet hours, defer and report back.
 
 Research:
 - perplexity_research      : deep research w/ citations (multi-source, prefers recent)
@@ -256,6 +274,67 @@ const TOOLS = [
       ghl_contact_id: { type: 'string', description: 'The GHL contact id returned from push_lead_to_ghl or lookup.' },
       tags:           { type: 'array', items: { type: 'string' }, minItems: 1 },
       remove:         { type: 'boolean', description: 'true to remove these tags; false (default) to add them.' },
+    }}},
+
+  // ============================================================
+  // Lindy.ai voice + voicemail + research agents (Phase 1 Lindy)
+  // ============================================================
+  { name: 'lindy_call_lead',
+    description: "Dispatch jh-outbound-caller to make a LIVE outbound call to a lead. Lindy answers in Charlie's voice, qualifies the prospect, and either books an inspection or leaves a voicemail. REAL CALL goes out. REQUIRES `confirm: true` AND explicit Charlie instruction in chat. Before calling, recap: lead_id, name, phone, and reason. Wait for 'call them' or similar before firing.",
+    input_schema: { type: 'object', required: ['lead_id', 'confirm'], properties: {
+      lead_id: { type: 'integer' },
+      storm_context: { type: 'string', description: "Optional context for the call (e.g. '4/18 Cedar Park hail')." },
+      confirm: { type: 'boolean', description: 'MUST be true. Gate to prevent accidental dial.' },
+    }}},
+  { name: 'lindy_enrich_lead',
+    description: 'Run jh-enricher on a lead — public-records research (county appraisal, social signals, HOA, recent news on their street). Read-only, free, takes ~2-3 minutes. Result lands in enrichment_results.',
+    input_schema: { type: 'object', required: ['lead_id'], properties: {
+      lead_id: { type: 'integer' },
+    }}},
+  { name: 'lindy_storm_blast',
+    description: "Dispatch a campaign to jh-storm-broadcaster which fans out into voice + voicemail tiers based on lead priority. Top 50 get live calls, next 150 get pre-recorded voicemail, the rest go to email cadence. REAL CALLS will be placed. REQUIRES `confirm: true` AND explicit 'launch storm blast' instruction.",
+    input_schema: { type: 'object', required: ['campaign_id', 'confirm'], properties: {
+      campaign_id: { type: 'integer' },
+      storm_event_id: { type: 'integer', description: 'Optional — link the blast to a specific storm event for context.' },
+      confirm: { type: 'boolean', description: 'MUST be true. Gate to prevent accidental fan-out.' },
+    }}},
+  { name: 'lindy_voicemail_blast',
+    description: 'Dispatch jh-voicemail-dropper to send a pre-recorded voicemail to every (non-opted-out) lead in a campaign. REAL voicemails go out. Requires a public audio URL (mp3, ~25-30 sec).',
+    input_schema: { type: 'object', required: ['campaign_id', 'voicemail_audio_url', 'confirm'], properties: {
+      campaign_id: { type: 'integer' },
+      voicemail_audio_url: { type: 'string', description: 'Public mp3 URL for the recorded message.' },
+      confirm: { type: 'boolean', description: 'MUST be true.' },
+    }}},
+  { name: 'lindy_recap_now',
+    description: "Trigger jh-recap-caller to call Charlie immediately with today's stats. Useful for testing the recap flow without waiting until 6pm. Default phone is (512) 221-3013. REQUIRES `confirm: true`.",
+    input_schema: { type: 'object', required: ['confirm'], properties: {
+      to_phone: { type: 'string', description: 'Phone to call. Defaults to Charlie\'s cell.' },
+      confirm: { type: 'boolean', description: 'MUST be true.' },
+    }}},
+  { name: 'query_inbox',
+    description: 'Read recent SMS replies + call logs from the Lindy agents. Useful for "what happened today" questions or scanning for hot leads. Returns up to 50 of each.',
+    input_schema: { type: 'object', properties: {
+      type:  { type: 'string', enum: ['sms','call','all'], default: 'all' },
+      hot:   { type: 'boolean', description: 'Filter to only hot_lead_flag rows.' },
+      hours: { type: 'integer', default: 24, maximum: 168, description: 'How many hours back to search.' },
+      limit: { type: 'integer', default: 30, maximum: 100 },
+    }}},
+
+  // ============================================================
+  // The big one — delegate to Charlie's bridge Lindy agent.
+  // Lindy has dynamic tool-loading (Gmail, Calendar, web search,
+  // SMS, voice, 500+ integrations). Use this for anything that
+  // needs a tool we don't have here, or when Charlie wants the
+  // agent to "go do that for me" in a free-form way.
+  // ============================================================
+  { name: 'delegate_to_assistant',
+    description: "Hand a free-form natural-language task to Charlie's Lindy bridge agent. The agent has dynamic tool access — it can search the web, send emails (Gmail), schedule calendar events, send SMS, look up people, etc. Use for: 'find me X about person Y', 'draft and send email to Z', 'schedule a meeting', 'research this neighborhood', 'send Charlie a heads-up text'. Returns lindy_job_id immediately; the actual result lands later via callback (poll lindy_jobs.callback_payload). For tasks needing a synchronous answer (research questions), set wait_for_result: true.",
+    input_schema: { type: 'object', required: ['task'], properties: {
+      task: { type: 'string', description: 'The natural-language instruction. Be specific: who, what, why, expected output format.' },
+      context: { type: 'object', description: 'Optional structured data the agent should work with (lead, campaign, storm details).' },
+      lead_id: { type: 'integer', description: 'Optional — link this delegation to a specific lead in our CRM.' },
+      campaign_id: { type: 'integer', description: 'Optional — link to a campaign.' },
+      wait_for_result: { type: 'boolean', description: 'If true, polls for up to 25s waiting for the assistant to call back. Use for research/lookup tasks where Charlie expects a synchronous answer in chat.' },
     }}},
 ];
 
@@ -603,6 +682,187 @@ async function runTool(name, input) {
         } catch (err) {
           return { error: `GHL tag failed: ${err.message}`, hint: err.status === 401 || err.status === 403 ? 'GHL token missing tags.write scope.' : undefined };
         }
+      }
+
+      // ============================================================
+      // Lindy.ai dispatch tools
+      // ============================================================
+      case 'lindy_call_lead': {
+        if (input.confirm !== true) return { error: 'confirm must be true. This places a real outbound call.' };
+        const id = parseInt(input.lead_id, 10);
+        if (!id) return { error: 'lead_id required' };
+        const { data: lead } = await supabase.from('leads').select('id, first_name, mobile, phone, street, city, campaign_id, opted_out').eq('id', id).single();
+        if (!lead) return { error: 'lead not found' };
+        if (lead.opted_out) return { error: 'lead is opted out — cannot call' };
+        let campaign = null;
+        if (lead.campaign_id) {
+          const { data } = await supabase.from('campaigns').select('id, name').eq('id', lead.campaign_id).single();
+          campaign = data;
+        }
+        const { callLead } = await import('../../lib/lindy.js');
+        const result = await callLead({
+          lead, campaign,
+          storm_context: input.storm_context || null,
+          triggered_by: 'strategist',
+          triggered_by_user: 'charlie',
+        });
+        return result.ok
+          ? { ok: true, lindy_job_id: result.job_id, lead_id: id, dispatched_to: 'jh-outbound-caller' }
+          : { error: result.error || 'dispatch failed', lindy_job_id: result.job_id };
+      }
+      case 'lindy_enrich_lead': {
+        const id = parseInt(input.lead_id, 10);
+        if (!id) return { error: 'lead_id required' };
+        const { data: lead } = await supabase.from('leads').select('id, first_name, last_name, street, city, state, zip').eq('id', id).single();
+        if (!lead) return { error: 'lead not found' };
+        const { enrichLead } = await import('../../lib/lindy.js');
+        const result = await enrichLead({ lead, triggered_by: 'strategist', triggered_by_user: 'charlie' });
+        return result.ok
+          ? { ok: true, lindy_job_id: result.job_id, lead_id: id, note: 'Enrichment in progress. Result will land in enrichment_results table when done.' }
+          : { error: result.error || 'dispatch failed' };
+      }
+      case 'lindy_storm_blast': {
+        if (input.confirm !== true) return { error: 'confirm must be true. This dispatches real calls + voicemails to many leads.' };
+        const cid = parseInt(input.campaign_id, 10);
+        if (!cid) return { error: 'campaign_id required' };
+        const { data: campaign } = await supabase.from('campaigns').select('id, name, target_input, storm_event_id').eq('id', cid).single();
+        if (!campaign) return { error: 'campaign not found' };
+        const { data: leads } = await supabase
+          .from('leads').select('id, first_name, last_name, mobile, phone, email, street, opted_out')
+          .eq('campaign_id', cid).eq('opted_out', false).limit(500);
+        if (!leads || !leads.length) return { error: 'no leads in campaign' };
+        let storm = null;
+        const sid = input.storm_event_id || campaign.storm_event_id;
+        if (sid) {
+          const { data } = await supabase.from('storm_events').select('id, swath_size_in, detected_at, received_at, zip').eq('id', sid).single();
+          storm = data;
+        }
+        const { startStormBlast } = await import('../../lib/lindy.js');
+        const result = await startStormBlast({ storm, campaign, leads, triggered_by: 'strategist', triggered_by_user: 'charlie' });
+        return result.ok
+          ? { ok: true, lindy_job_id: result.job_id, campaign_id: cid, lead_count: leads.length, dispatched_to: 'jh-storm-broadcaster' }
+          : { error: result.error || 'dispatch failed' };
+      }
+      case 'lindy_voicemail_blast': {
+        if (input.confirm !== true) return { error: 'confirm must be true.' };
+        const cid = parseInt(input.campaign_id, 10);
+        const url = String(input.voicemail_audio_url || '').trim();
+        if (!cid) return { error: 'campaign_id required' };
+        if (!/^https?:\/\//.test(url)) return { error: 'voicemail_audio_url must be a public http(s) URL' };
+        const { data: leads } = await supabase
+          .from('leads').select('id, first_name, mobile, phone, opted_out')
+          .eq('campaign_id', cid).eq('opted_out', false);
+        if (!leads || !leads.length) return { error: 'no leads in campaign' };
+        const { dropVoicemail } = await import('../../lib/lindy.js');
+        const result = await dropVoicemail({
+          leads, voicemail_audio_url: url,
+          campaign: { id: cid },
+          triggered_by: 'strategist', triggered_by_user: 'charlie',
+        });
+        return result.ok
+          ? { ok: true, lindy_job_id: result.job_id, lead_count: leads.length }
+          : { error: result.error || 'dispatch failed' };
+      }
+      case 'lindy_recap_now': {
+        if (input.confirm !== true) return { error: 'confirm must be true.' };
+        const { buildRecapStats } = await import('./lindy.js');
+        const { dailyRecap } = await import('../../lib/lindy.js');
+        const stats = await buildRecapStats();
+        const summaries = stats._hot_lead_summaries || [];
+        delete stats._hot_lead_summaries;
+        const result = await dailyRecap({
+          to_phone: input.to_phone || '+15122213013',
+          stats, hot_lead_summaries: summaries,
+          triggered_by: 'strategist',
+          triggered_by_user: 'charlie',
+        });
+        return result.ok
+          ? { ok: true, lindy_job_id: result.job_id, dispatched_to: 'jh-recap-caller' }
+          : { error: result.error || 'dispatch failed' };
+      }
+      case 'delegate_to_assistant': {
+        const task = String(input.task || '').trim();
+        if (!task) return { error: 'task required' };
+        const { delegateToAssistant } = await import('../../lib/lindy.js');
+        const result = await delegateToAssistant({
+          task,
+          context: input.context || null,
+          lead_id: input.lead_id || null,
+          campaign_id: input.campaign_id || null,
+          triggered_by: 'strategist',
+          triggered_by_user: 'charlie',
+        });
+        if (!result.ok) {
+          return { error: result.error || 'delegation failed', lindy_job_id: result.job_id };
+        }
+
+        // Optionally poll for the assistant's callback so the strategist
+        // can include the result in the same chat turn.
+        if (input.wait_for_result) {
+          const start = Date.now();
+          const timeoutMs = 25_000;
+          const pollMs = 1500;
+          while (Date.now() - start < timeoutMs) {
+            await new Promise((r) => setTimeout(r, pollMs));
+            const { data: row } = await supabase
+              .from('lindy_jobs')
+              .select('status, callback_payload, error_message')
+              .eq('id', result.job_id)
+              .single();
+            if (row?.status === 'callback_received') {
+              return {
+                ok: true,
+                lindy_job_id: result.job_id,
+                summary: row.callback_payload?.summary || null,
+                result: row.callback_payload?.result || null,
+                side_effects: row.callback_payload?.side_effects || [],
+              };
+            }
+            if (row?.status === 'failed') {
+              return { ok: false, error: row.error_message || 'failed', lindy_job_id: result.job_id };
+            }
+          }
+          return {
+            ok: true,
+            lindy_job_id: result.job_id,
+            note: 'Dispatched. Assistant has not called back within 25s — result will land asynchronously.',
+            poll_hint: 'SELECT callback_payload FROM lindy_jobs WHERE id = ' + result.job_id,
+          };
+        }
+
+        return {
+          ok: true,
+          lindy_job_id: result.job_id,
+          dispatched: true,
+          note: 'Task dispatched. Result lands asynchronously via /api/webhooks/lindy/assistant-result.',
+        };
+      }
+
+      case 'query_inbox': {
+        const hours = Math.min(parseInt(input.hours || 24, 10), 168);
+        const since = new Date(Date.now() - hours * 3600_000).toISOString();
+        const limit = Math.min(parseInt(input.limit || 30, 10), 100);
+        const type = input.type || 'all';
+        const out = { since, hours, sms: [], calls: [] };
+        if (type === 'sms' || type === 'all') {
+          let q = supabase.from('sms_messages')
+            .select('id, created_at, direction, peer_number, body, classification, hot_lead_flag, opt_out_flag, lead_id')
+            .gte('created_at', since)
+            .order('created_at', { ascending: false }).limit(limit);
+          if (input.hot) q = q.eq('hot_lead_flag', true);
+          const { data } = await q;
+          out.sms = data || [];
+        }
+        if (type === 'call' || type === 'all') {
+          let q = supabase.from('call_logs')
+            .select('id, created_at, source, agent_name, outcome, summary, hot_lead_flag, booked_inspection, lead_id, from_number, to_number')
+            .gte('created_at', since)
+            .order('created_at', { ascending: false }).limit(limit);
+          if (input.hot) q = q.eq('hot_lead_flag', true);
+          const { data } = await q;
+          out.calls = data || [];
+        }
+        return out;
       }
 
       default: return { error: 'unknown tool: ' + name };
