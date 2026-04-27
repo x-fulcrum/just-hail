@@ -572,7 +572,6 @@
           <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Multi-touch sequences running on your polygons. Click any campaign for the full lead list + per-lead drill-down with timeline, message bodies, and override controls.</p>
         </div>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <button class="btn btn-ghost" id="dripSeedBtn" title="Install the default Defcon-1 + Light Nudge sequences if missing" style="font-size: 12px; padding: 8px 14px;">⚡ Seed defaults</button>
           <button class="btn btn-ghost" id="dripRefreshBtn" style="font-size: 12px; padding: 8px 14px;">Refresh</button>
         </div>
       </div>
@@ -1119,19 +1118,6 @@ async function pollDrip() {
 }
 
 document.getElementById('dripRefreshBtn')?.addEventListener('click', pollDrip);
-document.getElementById('dripSeedBtn')?.addEventListener('click', async () => {
-  if (!confirm('Install the default Defcon-1 + Light Nudge sequences if they don\'t exist? (Idempotent — safe to click multiple times.)')) return;
-  const r = await fetch('/api/admin/drip', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ action: 'seed_default_sequences' }),
-  });
-  const j = await r.json();
-  alert(j.ok
-    ? '✓ Sequences seeded:\n' + j.results.map(x => `${x.status}: ${x.name}`).join('\n')
-    : 'Failed: ' + (j.error || 'unknown'));
-  pollDrip();
-});
 
 // Drip-row action delegation (detail, pause, resume)
 document.addEventListener('click', async (e) => {
