@@ -1183,37 +1183,49 @@ async function showDripDetail(dripId) {
   const bounceRate = pct(c.emails_bounced || 0);
   const conversionRate = c.total_leads > 0 ? Math.round(((c.hot_leads || 0) / c.total_leads) * 100) + '%' : '—';
 
+  // Queued = handed to Smartlead, waiting in their cadence to fire
+  // Sent   = Smartlead actually delivered (EMAIL_SENT webhook fired)
+  const queued = c.emails_queued || 0;
+  const inFlight = Math.max(0, queued - sent);
+
   document.getElementById('dripDrawerBody').innerHTML = `
-    <!-- Lead funnel -->
+    <!-- Lead funnel — pipeline state of the leads themselves -->
     <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px;">
       ${[
-        ['Total', c.total_leads || 0, ''],
-        ['Active', c.active_leads || 0, 'var(--green)'],
-        ['Hot 🔥', c.hot_leads || 0, 'var(--accent)'],
-        ['Bounced', c.bounced_leads || 0, 'var(--ink-dim)'],
-        ['Opted out', c.opted_out_leads || 0, 'var(--amber)'],
-      ].map(([label, val, color]) => `
-        <div class="card" style="padding: 12px 14px;">
+        ['Total',          c.total_leads     || 0, '', 'Leads enrolled in this drip'],
+        ['Active',         c.active_leads    || 0, 'var(--green)', 'Still in the queue / advancing through steps'],
+        ['Hot 🔥',         c.hot_leads       || 0, 'var(--accent)', 'Replied or filled the form — Charlie takes over'],
+        ['Pre-flight fail',c.bounced_leads   || 0, 'var(--ink-dim)', 'Bouncer rejected the email before we tried to send'],
+        ['Opted out',      c.opted_out_leads || 0, 'var(--amber)', 'Replied STOP / unsubscribed'],
+      ].map(([label, val, color, tooltip]) => `
+        <div class="card" style="padding: 12px 14px;" title="${escDrip(tooltip)}">
           <div style="font-family: var(--font-display); font-size: 24px; ${color ? 'color:' + color + ';' : ''}">${val}</div>
           <div class="mono dim" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px;">${label}</div>
         </div>
       `).join('')}
     </div>
 
-    <!-- Email funnel — counts + rates -->
-    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px;">
+    <!-- Email funnel — what Smartlead is actually doing -->
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 8px;">
       ${[
-        ['Sent', sent, '', '100%'],
-        ['Opens', c.emails_opened || 0, '', openRate],
-        ['Clicks', c.emails_clicked || 0, '', clickRate],
-        ['Replies', c.emails_replied || 0, 'var(--green)', replyRate],
-        ['Bounced', c.emails_bounced || 0, 'var(--accent)', bounceRate],
-      ].map(([label, val, color, rate]) => `
-        <div class="card" style="padding: 12px 14px;">
+        ['Queued',  queued,                    '',                'Handed to Smartlead, waiting in their 20-min-spaced send queue', queued > 0 ? `${inFlight} in flight` : '—'],
+        ['Sent',    sent,                      '',                'Smartlead actually delivered (from EMAIL_SENT webhook)',          queued > 0 ? `${Math.round(sent/queued*100)}%` : '—'],
+        ['Opens',   c.emails_opened || 0,      '',                'Recipient opened',                                                openRate],
+        ['Clicks',  c.emails_clicked || 0,     '',                'Recipient clicked the justhail.net link',                         clickRate],
+        ['Replies', c.emails_replied || 0,     'var(--green)',    'Recipient replied (auto-marks lead hot)',                         replyRate],
+      ].map(([label, val, color, tooltip, rate]) => `
+        <div class="card" style="padding: 12px 14px;" title="${escDrip(tooltip)}">
           <div style="font-family: var(--font-display); font-size: 24px; ${color ? 'color:' + color + ';' : ''}">${val}</div>
           <div class="mono dim" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px;">${label} <span style="float: right; color: var(--ink);">${rate}</span></div>
         </div>
       `).join('')}
+    </div>
+    <!-- Bounce row (real delivery bounces — fits below as 1 cell) -->
+    <div style="display: grid; grid-template-columns: 1fr 4fr; gap: 10px; margin-bottom: 24px;">
+      <div class="card" style="padding: 8px 14px;" title="Smartlead-reported delivery bounces (rare with warmed mailboxes)">
+        <div class="mono" style="font-size: 13px; color: ${(c.emails_bounced||0) > 0 ? 'var(--accent)' : 'var(--ink-dim)'};">${c.emails_bounced || 0} delivery bounces</div>
+      </div>
+      <div></div>
     </div>
 
     <!-- Conversion summary -->
