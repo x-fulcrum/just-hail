@@ -587,7 +587,7 @@
               <th style="width: 100px;">Sequence</th>
               <th style="width: 90px;">Status</th>
               <th style="width: 80px; text-align: right;">Leads</th>
-              <th style="width: 100px; text-align: right;">Sent / Open / Click</th>
+              <th style="width: 140px; text-align: right;">Sent ▸ Opened ▸ Clicked ▸ Replied</th>
               <th style="width: 70px; text-align: right;">Hot</th>
               <th style="width: 110px; text-align: right;">Actions</th>
             </tr>
@@ -1097,8 +1097,9 @@ async function pollDrip() {
             <div class="mono dim" style="font-size: 10px;">${c.active_leads || 0} active</div>
           </td>
           <td style="text-align: right;">
-            <div class="mono" style="font-size: 11px;">${c.emails_sent || 0} / ${c.emails_opened || 0} / ${c.emails_clicked || 0}</div>
-            ${c.sms_sent ? `<div class="mono dim" style="font-size: 10px;">${c.sms_sent} SMS</div>` : ''}
+            <div class="mono" style="font-size: 11px;" title="Sent / Opened / Clicked / Replied">${c.emails_sent || 0} ▸ ${c.emails_opened || 0} ▸ ${c.emails_clicked || 0} ▸ ${c.emails_replied || 0}</div>
+            <div class="mono dim" style="font-size: 10px;" title="Open rate · Click rate · Reply rate · Bounce rate">${c.emails_sent > 0 ? `${Math.round((c.emails_opened || 0) / c.emails_sent * 100)}% · ${Math.round((c.emails_clicked || 0) / c.emails_sent * 100)}% · ${Math.round((c.emails_replied || 0) / c.emails_sent * 100)}% · ${Math.round((c.emails_bounced || 0) / c.emails_sent * 100)}% bnc` : '—'}</div>
+            ${c.sms_sent ? `<div class="mono dim" style="font-size: 10px;">${c.sms_sent} SMS · ${c.sms_replied || 0} reply</div>` : ''}
           </td>
           <td style="text-align: right;">
             ${c.hot_leads > 0 ? `<span class="chip new">🔥 ${c.hot_leads}</span>` : '<span class="dim">—</span>'}
@@ -1187,23 +1188,64 @@ async function showDripDetail(dripId) {
   document.getElementById('dripDrawerTitle').textContent = c.name;
   document.getElementById('dripDrawerSubtitle').textContent = `${c.status} · sequence "${c.drip_sequences?.name || '?'}" · ${c.total_leads} leads · ${c.hot_leads || 0} hot`;
 
+  // Rate calculations
+  const sent = c.emails_sent || 0;
+  const pct = (n) => sent > 0 ? Math.round((n / sent) * 100) + '%' : '—';
+  const openRate = pct(c.emails_opened || 0);
+  const clickRate = pct(c.emails_clicked || 0);
+  const replyRate = pct(c.emails_replied || 0);
+  const bounceRate = pct(c.emails_bounced || 0);
+  const conversionRate = c.total_leads > 0 ? Math.round(((c.hot_leads || 0) / c.total_leads) * 100) + '%' : '—';
+
   document.getElementById('dripDrawerBody').innerHTML = `
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px;">
+    <!-- Lead funnel -->
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 18px;">
       ${[
+        ['Total', c.total_leads || 0, ''],
         ['Active', c.active_leads || 0, 'var(--green)'],
-        ['Completed', c.completed_leads || 0, 'var(--ink-dim)'],
+        ['Hot 🔥', c.hot_leads || 0, 'var(--accent)'],
+        ['Bounced', c.bounced_leads || 0, 'var(--ink-dim)'],
         ['Opted out', c.opted_out_leads || 0, 'var(--amber)'],
-        ['Bounced', c.bounced_leads || 0, 'var(--accent)'],
-        ['Emails sent', c.emails_sent || 0, ''],
-        ['Opens', c.emails_opened || 0, ''],
-        ['Clicks', c.emails_clicked || 0, ''],
-        ['Replies', c.emails_replied || 0, 'var(--green)'],
       ].map(([label, val, color]) => `
         <div class="card" style="padding: 12px 14px;">
           <div style="font-family: var(--font-display); font-size: 24px; ${color ? 'color:' + color + ';' : ''}">${val}</div>
           <div class="mono dim" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px;">${label}</div>
         </div>
       `).join('')}
+    </div>
+
+    <!-- Email funnel — counts + rates -->
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px;">
+      ${[
+        ['Sent', sent, '', '100%'],
+        ['Opens', c.emails_opened || 0, '', openRate],
+        ['Clicks', c.emails_clicked || 0, '', clickRate],
+        ['Replies', c.emails_replied || 0, 'var(--green)', replyRate],
+        ['Bounced', c.emails_bounced || 0, 'var(--accent)', bounceRate],
+      ].map(([label, val, color, rate]) => `
+        <div class="card" style="padding: 12px 14px;">
+          <div style="font-family: var(--font-display); font-size: 24px; ${color ? 'color:' + color + ';' : ''}">${val}</div>
+          <div class="mono dim" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px;">${label} <span style="float: right; color: var(--ink);">${rate}</span></div>
+        </div>
+      `).join('')}
+    </div>
+
+    <!-- Conversion summary -->
+    <div class="card" style="padding: 14px 18px; margin-bottom: 24px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; background: var(--surface-2);">
+      <div>
+        <div class="mono dim" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;">Conversion (lead → hot)</div>
+        <div style="font-family: var(--font-display); font-size: 22px; color: var(--accent); margin-top: 4px;">${conversionRate}</div>
+      </div>
+      <div style="flex: 1; border-left: 1px solid var(--hair); padding-left: 24px;">
+        <div class="mono dim" style="font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;">Other channels</div>
+        <div class="mono" style="font-size: 12px; margin-top: 6px;">
+          ${c.sms_sent ? `📱 ${c.sms_sent} SMS · ${c.sms_replied || 0} replied` : '📱 0 SMS'}
+          &nbsp;·&nbsp;
+          ${c.voicemails_dropped ? `📼 ${c.voicemails_dropped} VM` : '📼 0 VM'}
+          &nbsp;·&nbsp;
+          ${c.calls_made ? `📞 ${c.calls_made} calls` : '📞 0 calls'}
+        </div>
+      </div>
     </div>
 
     <h3 style="font-family: var(--font-display); font-size: 18px; font-weight: 500; margin: 0 0 12px;">Leads (${leads.length})</h3>
@@ -1253,33 +1295,103 @@ async function showLeadTimeline(stateId) {
   const j = await r.json();
   if (!j.ok) { alert('Failed to load: ' + j.error); return; }
 
+  const s = j.state || {};
+  const lead = s.leads || {};
+  const timeline = j.timeline || [];
+
+  // Roll up per-channel send/event counts from the timeline
+  const tally = { email: { sent: 0, opened: 0, clicked: 0, replied: 0, bounced: 0, failed: 0 },
+                  sms:   { sent: 0, replied: 0, failed: 0 },
+                  voicemail: { sent: 0, failed: 0 },
+                  call:  { sent: 0, failed: 0 } };
+  for (const t of timeline) {
+    const c = tally[t.channel]; if (!c) continue;
+    if (t.event_type === 'sent' || t.event_type === 'send_attempt' || t.event_type === 'delivered') c.sent = (c.sent || 0) + 1;
+    if (t.event_type === 'opened') c.opened = (c.opened || 0) + 1;
+    if (t.event_type === 'clicked') c.clicked = (c.clicked || 0) + 1;
+    if (t.event_type === 'replied') c.replied = (c.replied || 0) + 1;
+    if (t.event_type === 'bounced') c.bounced = (c.bounced || 0) + 1;
+    if (t.event_type === 'failed') c.failed = (c.failed || 0) + 1;
+  }
+
+  const fmtTime = (ts) => ts ? new Date(ts).toLocaleString() : '—';
+  const sequenceName = s.drip_campaigns?.drip_sequences?.name || s.drip_campaigns?.name || '?';
+  const totalSteps = (s.drip_campaigns?.drip_sequences?.steps || []).length;
+
   const drawerHost = document.getElementById('drawerHost');
   // Build a SECOND drawer on top (modal-stack pattern)
   const inner = document.createElement('div');
   inner.innerHTML = `
     <div class="drawer-backdrop" style="z-index: 80;"></div>
-    <div class="drawer" style="width: 560px; z-index: 81;">
+    <div class="drawer" style="width: 600px; z-index: 81;">
       <div style="padding: 24px 28px; border-bottom: 1px solid var(--hair);">
         <div style="display: flex; justify-content: space-between; gap: 12px;">
           <div>
             <div class="eyebrow">Lead timeline</div>
-            <h2 style="margin: 8px 0 0; font-family: var(--font-display); font-size: 22px; font-weight: 400;">${escDrip([j.state.leads?.first_name, j.state.leads?.last_name].filter(Boolean).join(' ') || '(unknown)')}</h2>
+            <h2 style="margin: 8px 0 0; font-family: var(--font-display); font-size: 22px; font-weight: 400;">${escDrip([lead.first_name, lead.last_name].filter(Boolean).join(' ') || '(unknown)')}</h2>
             <div class="mono dim" style="font-size: 11px; margin-top: 4px;">
-              ${escDrip(j.state.leads?.street || '')} · status: ${j.state.status} · score: ${j.state.engagement_score}/100${j.state.hot_lead ? ' · 🔥' : ''}
+              ${escDrip([lead.street, lead.city, lead.state, lead.zip].filter(Boolean).join(', ') || '—')}
+            </div>
+            <div class="mono dim" style="font-size: 11px; margin-top: 2px;">
+              ${escDrip(lead.email || '—')} · ${escDrip(lead.phone || lead.mobile || '—')}
             </div>
           </div>
           <button class="btn btn-ghost" id="leadTimelineCloseBtn" style="font-size: 12px; padding: 8px 14px;">×</button>
         </div>
+
+        <!-- Status / score / step progress -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 18px;">
+          ${[
+            ['Status', escDrip(s.status || '—'), s.status === 'active' ? 'var(--green)' : s.status === 'opted_out' || s.status === 'bounced_out' ? 'var(--accent)' : ''],
+            ['Score', `${s.engagement_score || 0}/100`, s.hot_lead ? 'var(--accent)' : ''],
+            ['Step', `${s.current_step || 0}${totalSteps ? ' / ' + totalSteps : ''}`, ''],
+            ['Hot', s.hot_lead ? '🔥' : '—', s.hot_lead ? 'var(--accent)' : 'var(--ink-dim)'],
+          ].map(([label, val, color]) => `
+            <div class="card" style="padding: 8px 10px;">
+              <div style="font-size: 16px; font-weight: 500; ${color ? 'color:' + color + ';' : ''}">${val}</div>
+              <div class="mono dim" style="font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px;">${label}</div>
+            </div>
+          `).join('')}
+        </div>
+
+        <!-- Per-channel rollup -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px;">
+          <div class="card" style="padding: 8px 10px;">
+            <div class="mono" style="font-size: 11px;">📧 ${tally.email.sent} sent</div>
+            <div class="mono dim" style="font-size: 9px; margin-top: 2px;">${tally.email.opened}o · ${tally.email.clicked}c · ${tally.email.replied}r · ${tally.email.bounced}b</div>
+          </div>
+          <div class="card" style="padding: 8px 10px;">
+            <div class="mono" style="font-size: 11px;">📱 ${tally.sms.sent} sent</div>
+            <div class="mono dim" style="font-size: 9px; margin-top: 2px;">${tally.sms.replied} replied${tally.sms.failed ? ' · ' + tally.sms.failed + ' fail' : ''}</div>
+          </div>
+          <div class="card" style="padding: 8px 10px;">
+            <div class="mono" style="font-size: 11px;">📼 ${tally.voicemail.sent} drops</div>
+            <div class="mono dim" style="font-size: 9px; margin-top: 2px;">${tally.voicemail.failed ? tally.voicemail.failed + ' fail' : 'ok'}</div>
+          </div>
+          <div class="card" style="padding: 8px 10px;">
+            <div class="mono" style="font-size: 11px;">📞 ${tally.call.sent} calls</div>
+            <div class="mono dim" style="font-size: 9px; margin-top: 2px;">${tally.call.failed ? tally.call.failed + ' fail' : 'ok'}</div>
+          </div>
+        </div>
+
+        <!-- Activity timing -->
+        <div class="mono dim" style="font-size: 10px; margin-top: 10px; line-height: 1.6;">
+          Sequence: ${escDrip(sequenceName)}<br>
+          Enrolled: ${fmtTime(s.enrolled_at)} · Last touch: ${fmtTime(s.last_action_at)}<br>
+          ${s.scheduled_at ? `Next fire: ${fmtTime(s.scheduled_at)} (step ${s.next_step})` : 'No next touch scheduled'}
+          ${s.last_failure ? `<br><span style="color: var(--accent);">⚠ Last failure (${s.failure_count}×): ${escDrip(s.last_failure)}</span>` : ''}
+        </div>
       </div>
       <div style="padding: 20px 28px;">
-        ${(j.timeline || []).length === 0 ? '<div class="dim">No touches yet.</div>' :
-          j.timeline.map(t => `
+        ${timeline.length === 0 ? '<div class="dim">No touches yet.</div>' :
+          timeline.map(t => `
             <div style="border-left: 2px solid ${t.event_type === 'opened' || t.event_type === 'clicked' || t.event_type === 'replied' ? 'var(--green)' : t.event_type === 'failed' || t.event_type === 'bounced' ? 'var(--accent)' : 'var(--hair-strong)'}; padding: 10px 14px; margin-bottom: 10px; background: var(--surface-2); border-radius: 2px;">
               <div style="display: flex; justify-content: space-between; gap: 12px; align-items: baseline;">
                 <div>
                   <span class="chip" style="font-size: 9px;">${escDrip(t.channel)}</span>
                   <span style="margin-left: 6px; font-weight: 500; font-size: 12px;">${escDrip(t.event_type)}</span>
                   ${t.step_number ? `<span class="mono dim" style="font-size: 10px; margin-left: 6px;">step ${t.step_number}</span>` : ''}
+                  ${t.sender ? `<span class="mono dim" style="font-size: 10px; margin-left: 6px;">via ${escDrip(t.sender)}</span>` : ''}
                 </div>
                 <div class="mono dim" style="font-size: 10px;">${new Date(t.created_at).toLocaleString()}</div>
               </div>

@@ -128,18 +128,48 @@ function SmartForm({ accent }) {
     setSubmitting(true);
     setSubmitError('');
 
+    // Fire BOTH endpoints in parallel:
+    //   1. /api/form-submit — our backend (leads upsert, drip match, SMS retarget,
+    //      Charlie alert, Resend confirmation, PostHog mirror)
+    //   2. SHEET_ENDPOINT — Google Apps Script Sheet (Charlie's manual review backup)
+    const fetches = [];
+
+    // Add the source URL (with UTM params) so the backend can match the form-fill
+    // back to the originating drip campaign/lead.
+    const fullPayload = { ...payload, source_url: location.href };
+
+    fetches.push(
+      fetch('/api/form-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullPayload),
+      }).then(r => r.json()).then(j => ({ ok: j.ok !== false, kind: 'backend', data: j }))
+        .catch(err => ({ ok: false, kind: 'backend', error: err.message }))
+    );
+
     if (SHEET_ENDPOINT) {
-      try {
-        // text/plain avoids CORS preflight — Apps Script still parses JSON body
-        await fetch(SHEET_ENDPOINT, {
+      fetches.push(
+        fetch(SHEET_ENDPOINT, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(payload),
-        });
-      } catch (err) {
-        setSubmitError('Could not reach the server. Your request was saved locally — please call us at (512) 221-3013.');
-        console.warn('Sheet POST failed:', err);
+        }).then(() => ({ ok: true, kind: 'sheet' }))
+          .catch(err => ({ ok: false, kind: 'sheet', error: err.message }))
+      );
+    }
+
+    const results = await Promise.allSettled(fetches);
+    const backend = results.find(r => r.value?.kind === 'backend')?.value;
+
+    // If backend failed but Sheet succeeded, still let the user through (the
+    // form data isn't lost; Charlie sees it in the Sheet) — but log the issue.
+    if (!backend?.ok) {
+      console.warn('[form] backend submit failed:', backend?.error || backend?.data);
+      // Only show error if EVERYTHING failed
+      const sheetOk = results.find(r => r.value?.kind === 'sheet')?.value?.ok;
+      if (!sheetOk) {
+        setSubmitError('Could not reach the server. Please call us at (512) 221-3013.');
       }
     }
 
