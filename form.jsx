@@ -143,6 +143,44 @@ function SmartForm({ accent }) {
       }
     }
 
+    // PostHog: identify the lead by reference number, attach all form data
+    // as person properties, and capture a "form_submitted" event. UTMs from
+    // Hailey's drip emails are auto-attached via posthog.register() in
+    // index.html. This closes the attribution loop: drip → email → click
+    // → page visit → form submit, all linkable to one person.
+    try {
+      if (window.posthog) {
+        window.posthog.identify(ref, {
+          email: data.email,
+          phone: data.phone,
+          name: data.name,
+          zip: data.zip,
+          first_seen_ref: ref,
+          first_seen_at: new Date().toISOString(),
+        });
+        window.posthog.setPersonProperties({
+          vehicle: data.vehicle,
+          vehicle_year: data.year,
+          insurer: data.insurer,
+          severity: data.severity,
+          severity_label: severityLabels[data.severity - 1],
+          timeline: data.timeline,
+          sms_consent: data.smsConsent,
+        });
+        window.posthog.capture('form_submitted', {
+          reference_number: ref,
+          severity: data.severity,
+          severity_label: severityLabels[data.severity - 1],
+          estimated_range: severityRange[data.severity - 1],
+          has_phone: !!data.phone,
+          has_email: !!data.email,
+          sms_consent: data.smsConsent,
+        });
+      }
+    } catch (e) {
+      console.warn('[posthog] identify/capture failed:', e);
+    }
+
     setRefNum(ref);
     setSubmitting(false);
     setSubmitted(true);
