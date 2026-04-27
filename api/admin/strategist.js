@@ -66,21 +66,12 @@ Engagement (write):
 - push_lead_to_ghl         : upsert a GHL contact for a lead (adds default tags + triggers workflows). Reversible; safe to call when the user asks.
 - tag_ghl_contact          : add or remove tags on a GHL contact. Safe; used to trigger or pause GHL workflows.
 
-Lindy.ai bridge agent (PRIMARY delegation channel):
-- delegate_to_assistant    : Hand any free-form task to Charlie's bridge Lindy agent. The bridge has dynamic tool-loading (Gmail, Calendar, web search, SMS, voice, 500+ integrations). USE THIS as the default tool for: "look up X person", "send Charlie a heads-up SMS", "draft and send email to Y", "schedule a meeting", "research this neighborhood for hail damage", "remind me at 3pm to call back". Cheaper + faster than wiring dedicated tools for one-off tasks. Set wait_for_result:true when Charlie expects a synchronous answer in chat.
-
-Lindy.ai specialized agents (high-volume work the bridge can't handle alone):
-- lindy_call_lead          : dispatch jh-outbound-caller to LIVE-call a lead in Charlie's voice. REAL CALL goes out. REQUIRES confirm:true AND explicit chat confirmation.
-- lindy_enrich_lead        : run jh-enricher (public-records research). Read-only, free, ~2-3 minutes. Result lands in enrichment_results table.
-- lindy_storm_blast        : dispatch a campaign to jh-storm-broadcaster which fans out into voice + voicemail tiers. REAL CALLS placed. REQUIRES confirm:true.
-- lindy_voicemail_blast    : drop pre-recorded voicemail to every (non-opted-out) lead in a campaign via jh-voicemail-dropper. Needs a public mp3 URL. REAL voicemails. REQUIRES confirm:true.
-- lindy_recap_now          : trigger jh-recap-caller to call Charlie immediately with today's stats (cron normally fires this at 6pm CT). REQUIRES confirm:true.
-- query_inbox              : read recent SMS replies + call logs from Lindy agents — "what happened today" / scan for hot leads.
-
-WHICH LINDY TOOL TO USE:
-- For ONE-OFF tasks Charlie says ("text me when X", "find email for Y", "set reminder", "research Z") → use delegate_to_assistant
-- For DEDICATED PIPELINE actions (call THIS lead, blast THIS campaign) → use the specialized lindy_* tools
-- For RESEARCH that needs structure (county appraisal lookup) → use lindy_enrich_lead
+Voice + voicemail (only Lindy is wired for these — drip engine is email + SMS only):
+- lindy_call_lead          : LIVE outbound voice call (jh-outbound-caller). REAL CALL. REQUIRES confirm:true AND explicit user instruction.
+- lindy_enrich_lead        : public-records research on one lead (jh-enricher). Read-only, ~2-3 min.
+- lindy_voicemail_blast    : pre-recorded voicemail blast to a campaign's leads. REAL voicemails. REQUIRES confirm:true.
+- lindy_recap_now          : phone Charlie now with today's stats. (Daily cron fires at 6pm CT automatically.) REQUIRES confirm:true.
+- query_inbox              : read recent voice/SMS history from the Lindy specialized agents.
 
 DRIP ORCHESTRATOR — the SALES ENGINE (use these for "launch a drip" / "where are my campaigns" / "show me lead X's drip status"):
 - list_drip_sequences           : show available templates (Defcon-1, Light Nudge, custom)
@@ -124,7 +115,7 @@ ENGAGEMENT SAFETY RULES (NON-NEGOTIABLE):
 - Drafting + enrichment are fine to do proactively when Charlie asks. Drafts don't send. Enrichment is read-only research.
 - NEVER approve a draft without Charlie explicitly saying "approve" or similar.
 - NEVER send an email without Charlie explicitly saying "send" and specifying which draft. Recap the subject + first line before sending, so Charlie can veto.
-- NEVER call lindy_call_lead, lindy_storm_blast, lindy_voicemail_blast, or lindy_recap_now without explicit user authorization in the current chat. Always recap (lead/campaign name, count, what will happen) and wait for "do it" / "go" / "call them" before firing.
+- NEVER call lindy_call_lead, lindy_voicemail_blast, lindy_recap_now, force_send_to_lead, abort_drip_campaign, or any *_blast/launch tool without explicit user authorization in the current chat. Always recap (lead/campaign name, count, what will happen) and wait for "do it" / "go" / "call them" before firing.
 - Always surface the draft_id (or lead_id/campaign_id) + who it's going to + subject/audio + preview before asking for confirmation.
 - If Charlie says "send all approved drafts" or "blast the whole campaign", REFUSE until you've listed every recipient for him to eyeball. No blast sends without per-recipient visibility.
 - TCPA quiet hours: do not initiate outbound voice or SMS between 9pm and 8am in the recipient's local time zone. If asked during quiet hours, defer and report back.
@@ -329,13 +320,10 @@ const TOOLS = [
     input_schema: { type: 'object', required: ['lead_id'], properties: {
       lead_id: { type: 'integer' },
     }}},
-  { name: 'lindy_storm_blast',
-    description: "Dispatch a campaign to jh-storm-broadcaster which fans out into voice + voicemail tiers based on lead priority. Top 50 get live calls, next 150 get pre-recorded voicemail, the rest go to email cadence. REAL CALLS will be placed. REQUIRES `confirm: true` AND explicit 'launch storm blast' instruction.",
-    input_schema: { type: 'object', required: ['campaign_id', 'confirm'], properties: {
-      campaign_id: { type: 'integer' },
-      storm_event_id: { type: 'integer', description: 'Optional — link the blast to a specific storm event for context.' },
-      confirm: { type: 'boolean', description: 'MUST be true. Gate to prevent accidental fan-out.' },
-    }}},
+  // (lindy_storm_blast REMOVED — use create_drip_campaign + enroll_polygon_in_drip
+  //  which gives finer-grained control, full per-lead tracking, and runs on our
+  //  own infrastructure (Smartlead + Twilio direct) instead of through Lindy's
+  //  dispatcher that we can't observe.)
   { name: 'lindy_voicemail_blast',
     description: 'Dispatch jh-voicemail-dropper to send a pre-recorded voicemail to every (non-opted-out) lead in a campaign. REAL voicemails go out. Requires a public audio URL (mp3, ~25-30 sec).',
     input_schema: { type: 'object', required: ['campaign_id', 'voicemail_audio_url', 'confirm'], properties: {
@@ -365,15 +353,9 @@ const TOOLS = [
   // needs a tool we don't have here, or when Charlie wants the
   // agent to "go do that for me" in a free-form way.
   // ============================================================
-  { name: 'delegate_to_assistant',
-    description: "Hand a free-form natural-language task to Charlie's Lindy bridge agent. The agent has dynamic tool access — it can search the web, send emails (Gmail), schedule calendar events, send SMS, look up people, etc. Use for: 'find me X about person Y', 'draft and send email to Z', 'schedule a meeting', 'research this neighborhood', 'send Charlie a heads-up text'. Returns lindy_job_id immediately; the actual result lands later via callback (poll lindy_jobs.callback_payload). For tasks needing a synchronous answer (research questions), set wait_for_result: true.",
-    input_schema: { type: 'object', required: ['task'], properties: {
-      task: { type: 'string', description: 'The natural-language instruction. Be specific: who, what, why, expected output format.' },
-      context: { type: 'object', description: 'Optional structured data the agent should work with (lead, campaign, storm details).' },
-      lead_id: { type: 'integer', description: 'Optional — link this delegation to a specific lead in our CRM.' },
-      campaign_id: { type: 'integer', description: 'Optional — link to a campaign.' },
-      wait_for_result: { type: 'boolean', description: 'If true, polls for up to 25s waiting for the assistant to call back. Use for research/lookup tasks where Charlie expects a synchronous answer in chat.' },
-    }}},
+  // (delegate_to_assistant REMOVED — Hailey has 40+ direct tools that
+  //  do everything the bridge could. No reason to round-trip through
+  //  Lindy. Charlie's iMessage Lindy Assistant is independent.)
 
   // ============================================================
   // PHASE 2 — DRIP ORCHESTRATOR + VALIDATION + ENRICHMENT TOOLS
@@ -881,28 +863,7 @@ async function runTool(name, input) {
           ? { ok: true, lindy_job_id: result.job_id, lead_id: id, note: 'Enrichment in progress. Result will land in enrichment_results table when done.' }
           : { error: result.error || 'dispatch failed' };
       }
-      case 'lindy_storm_blast': {
-        if (input.confirm !== true) return { error: 'confirm must be true. This dispatches real calls + voicemails to many leads.' };
-        const cid = parseInt(input.campaign_id, 10);
-        if (!cid) return { error: 'campaign_id required' };
-        const { data: campaign } = await supabase.from('campaigns').select('id, name, target_input, storm_event_id').eq('id', cid).single();
-        if (!campaign) return { error: 'campaign not found' };
-        const { data: leads } = await supabase
-          .from('leads').select('id, first_name, last_name, mobile, phone, email, street, opted_out')
-          .eq('campaign_id', cid).eq('opted_out', false).limit(500);
-        if (!leads || !leads.length) return { error: 'no leads in campaign' };
-        let storm = null;
-        const sid = input.storm_event_id || campaign.storm_event_id;
-        if (sid) {
-          const { data } = await supabase.from('storm_events').select('id, swath_size_in, detected_at, received_at, zip').eq('id', sid).single();
-          storm = data;
-        }
-        const { startStormBlast } = await import('../../lib/lindy.js');
-        const result = await startStormBlast({ storm, campaign, leads, triggered_by: 'strategist', triggered_by_user: 'charlie' });
-        return result.ok
-          ? { ok: true, lindy_job_id: result.job_id, campaign_id: cid, lead_count: leads.length, dispatched_to: 'jh-storm-broadcaster' }
-          : { error: result.error || 'dispatch failed' };
-      }
+      // (lindy_storm_blast removed — use create_drip_campaign + enroll_polygon_in_drip)
       case 'lindy_voicemail_blast': {
         if (input.confirm !== true) return { error: 'confirm must be true.' };
         const cid = parseInt(input.campaign_id, 10);
@@ -940,63 +901,7 @@ async function runTool(name, input) {
           ? { ok: true, lindy_job_id: result.job_id, dispatched_to: 'jh-recap-caller' }
           : { error: result.error || 'dispatch failed' };
       }
-      case 'delegate_to_assistant': {
-        const task = String(input.task || '').trim();
-        if (!task) return { error: 'task required' };
-        const { delegateToAssistant } = await import('../../lib/lindy.js');
-        const result = await delegateToAssistant({
-          task,
-          context: input.context || null,
-          lead_id: input.lead_id || null,
-          campaign_id: input.campaign_id || null,
-          triggered_by: 'strategist',
-          triggered_by_user: 'charlie',
-        });
-        if (!result.ok) {
-          return { error: result.error || 'delegation failed', lindy_job_id: result.job_id };
-        }
-
-        // Optionally poll for the assistant's callback so the strategist
-        // can include the result in the same chat turn.
-        if (input.wait_for_result) {
-          const start = Date.now();
-          const timeoutMs = 25_000;
-          const pollMs = 1500;
-          while (Date.now() - start < timeoutMs) {
-            await new Promise((r) => setTimeout(r, pollMs));
-            const { data: row } = await supabase
-              .from('lindy_jobs')
-              .select('status, callback_payload, error_message')
-              .eq('id', result.job_id)
-              .single();
-            if (row?.status === 'callback_received') {
-              return {
-                ok: true,
-                lindy_job_id: result.job_id,
-                summary: row.callback_payload?.summary || null,
-                result: row.callback_payload?.result || null,
-                side_effects: row.callback_payload?.side_effects || [],
-              };
-            }
-            if (row?.status === 'failed') {
-              return { ok: false, error: row.error_message || 'failed', lindy_job_id: result.job_id };
-            }
-          }
-          return {
-            ok: true,
-            lindy_job_id: result.job_id,
-            note: 'Dispatched. Assistant has not called back within 25s — result will land asynchronously.',
-            poll_hint: 'SELECT callback_payload FROM lindy_jobs WHERE id = ' + result.job_id,
-          };
-        }
-
-        return {
-          ok: true,
-          lindy_job_id: result.job_id,
-          dispatched: true,
-          note: 'Task dispatched. Result lands asynchronously via /api/webhooks/lindy/assistant-result.',
-        };
-      }
+      // (delegate_to_assistant removed — Hailey has direct tools for everything now)
 
       case 'query_inbox': {
         const hours = Math.min(parseInt(input.hours || 24, 10), 168);
@@ -1146,22 +1051,20 @@ async function runTool(name, input) {
       }
       case 'force_send_to_lead': {
         if (input.confirm !== true) return { error: 'confirm must be true. Sends a real message immediately.' };
-        const { data: state } = await supabase
-          .from('drip_lead_state').select('id, drip_campaign_id, lead_id, leads(first_name,email,phone,mobile)')
-          .eq('id', input.drip_lead_state_id).single();
-        if (!state) return { error: 'state not found' };
-        if (input.channel === 'sms') {
-          const { send } = await import('../../lib/twilio-sms.js');
-          const phone = state.leads.mobile || state.leads.phone;
-          return await send({
-            to: phone, body: input.body,
-            lead_id: state.lead_id,
-            drip_campaign_id: state.drip_campaign_id,
-            drip_lead_state_id: state.id,
-            source: 'manual_admin_strategist',
-          });
-        }
-        return { error: 'email force_send not yet wired in Strategist tool layer (use admin UI)' };
+        // Delegate to /api/admin/drip force_send action so logic stays in one place
+        const siteUrl = process.env.SITE_URL?.replace(/\/$/, '') || 'https://justhail.net';
+        const r = await fetch(`${siteUrl}/api/admin/drip`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'force_send',
+            drip_lead_state_id: input.drip_lead_state_id,
+            channel: input.channel,
+            subject: input.subject,
+            body: input.body,
+          }),
+        });
+        return await r.json();
       }
       case 'verify_email': {
         const { verify } = await import('../../lib/bouncer.js');

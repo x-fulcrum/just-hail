@@ -233,16 +233,21 @@ async function handlePost(req, res) {
     case 'force_send': {
       const { drip_lead_state_id, channel, body: msgBody, subject } = body;
       if (!drip_lead_state_id) return res.status(400).json({ ok: false, error: 'drip_lead_state_id required' });
+      if (!msgBody) return res.status(400).json({ ok: false, error: 'body required' });
 
       const { data: state } = await supabase
         .from('drip_lead_state')
-        .select('id, drip_campaign_id, lead_id, leads ( id, first_name, email, phone, mobile )')
+        .select('id, drip_campaign_id, lead_id, leads ( id, first_name, last_name, email, phone, mobile, opted_out )')
         .eq('id', drip_lead_state_id)
         .single();
       if (!state) return res.status(404).json({ ok: false, error: 'state not found' });
+      if (state.leads?.opted_out) {
+        return res.status(400).json({ ok: false, error: 'lead is opted out — cannot force send' });
+      }
 
       if (channel === 'sms') {
         const phone = state.leads.mobile || state.leads.phone;
+        if (!phone) return res.status(400).json({ ok: false, error: 'lead has no phone' });
         const result = await sendSms({
           to: phone,
           body: msgBody,
@@ -253,8 +258,62 @@ async function handlePost(req, res) {
         });
         return res.status(result.ok ? 200 : 400).json(result);
       }
-      // TODO: email force-send via Resend (simpler than Smartlead for one-offs)
-      return res.status(400).json({ ok: false, error: 'channel not yet supported in force_send: ' + channel });
+
+      if (channel === 'email') {
+        if (!state.leads?.email) return res.status(400).json({ ok: false, error: 'lead has no email' });
+        if (!subject) return res.status(400).json({ ok: false, error: 'subject required for email' });
+
+        // Verify email isn't undeliverable / toxic before sending
+        const { verify } = await import('../../lib/bouncer.js');
+        const verification = await verify(state.leads.email);
+        if (verification.drop) {
+          return res.status(400).json({ ok: false, error: 'email_undeliverable: ' + verification.status });
+        }
+
+        // Send via Resend (simpler than spinning up a Smartlead campaign for one-offs)
+        const { sendEmail } = await import('../../lib/email.js');
+        let sendResult;
+        try {
+          sendResult = await sendEmail({
+            to: state.leads.email,
+            subject,
+            text: msgBody,
+            tags: [
+              { name: 'force_send', value: 'true' },
+              { name: 'drip_campaign_id', value: String(state.drip_campaign_id) },
+              { name: 'lead_id', value: String(state.lead_id) },
+            ],
+          });
+        } catch (err) {
+          await supabase.from('drip_touches').insert({
+            drip_campaign_id: state.drip_campaign_id, lead_id: state.lead_id,
+            drip_lead_state_id: state.id,
+            channel: 'email', event_type: 'failed',
+            recipient: state.leads.email, subject, body: msgBody,
+            provider: 'resend',
+            error_message: 'force_send_failed: ' + err.message,
+          });
+          return res.status(500).json({ ok: false, error: 'send_failed: ' + err.message });
+        }
+
+        await supabase.from('drip_touches').insert({
+          drip_campaign_id: state.drip_campaign_id, lead_id: state.lead_id,
+          drip_lead_state_id: state.id,
+          channel: 'email', event_type: 'sent',
+          recipient: state.leads.email, subject, body: msgBody,
+          provider: 'resend',
+          provider_message_id: sendResult?.id || sendResult?.data?.id || null,
+          provider_response: sendResult,
+          metadata: { source: 'manual_admin_force_send' },
+        });
+        await supabase.from('leads').update({
+          last_touched_at: new Date().toISOString(),
+          last_channel: 'email',
+        }).eq('id', state.lead_id);
+        return res.status(200).json({ ok: true, channel: 'email', resend_id: sendResult?.id || sendResult?.data?.id });
+      }
+
+      return res.status(400).json({ ok: false, error: 'channel must be "sms" or "email", got: ' + channel });
     }
 
     case 'seed_default_sequences': {
