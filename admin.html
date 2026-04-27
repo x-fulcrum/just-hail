@@ -1659,9 +1659,9 @@ function showCampaignDrawer(campaign, leads) {
           </div>
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
-          <button class="btn" id="draftSampleBtn" title="Generate drafts for the first 3 leads so you can see the quality before batching" style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Draft sample (3)</button>
-          <button class="btn btn-ghost" id="stormBlastBtn" title="Dispatch this campaign to jh-storm-broadcaster. It will fan out into voice + voicemail tiers based on lead priority." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">⚡ Storm blast →</button>
-          <button class="btn btn-ghost" id="voicemailBlastBtn" title="Send a pre-recorded voicemail to every lead in this campaign via jh-voicemail-dropper. Requires an audio URL." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">📼 Voicemail blast →</button>
+          <button class="btn" id="launchDripBtn" title="One-click: create Defcon-1 drip on this polygon, Bouncer-scrub all emails, enroll eligible leads. Smartlead campaign auto-creates with all 3 mailboxes attached. First touches go out within 5 min via cron." style="font-size: 13px; padding: 10px 16px; white-space: nowrap; background: var(--accent); color: #0a0b10; font-weight: 600;">🚀 Launch email drip →</button>
+          <button class="btn btn-ghost" id="draftSampleBtn" title="Generate drafts for the first 3 leads as a quality preview before launching the drip" style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Draft sample (3)</button>
+          <button class="btn btn-ghost" id="voicemailBlastBtn" title="(Phase 2) Send a pre-recorded voicemail to every lead via jh-voicemail-dropper Lindy agent. Requires an audio URL." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">📼 Voicemail blast →</button>
           <button class="btn btn-ghost" id="pushToGhlBtn" title="Push every lead in this campaign up to GHL as a contact with the jh-new-lead tag. Your GHL workflow picks it up from there." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Push to GHL →</button>
           <button class="btn btn-ghost" id="drawerCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
         </div>
@@ -1674,7 +1674,7 @@ function showCampaignDrawer(campaign, leads) {
   document.getElementById('drawerCloseBtn').addEventListener('click', () => { drawerHost.innerHTML = ''; });
   document.getElementById('draftSampleBtn').addEventListener('click', () => draftSample(campaign.id));
   document.getElementById('pushToGhlBtn').addEventListener('click', () => pushCampaignToGhl(campaign.id));
-  document.getElementById('stormBlastBtn').addEventListener('click', () => dispatchStormBlast(campaign.id));
+  document.getElementById('launchDripBtn').addEventListener('click', () => launchEmailDrip(campaign));
   document.getElementById('voicemailBlastBtn').addEventListener('click', () => dispatchVoicemailBlast(campaign.id));
 
   if (hasPolygon) renderDrawerMap(campaign.target_input.polygon);
@@ -1794,37 +1794,105 @@ async function pushCampaignToGhl(campaignId) {
 }
 
 // =========================================================
-// LINDY DISPATCH — campaign-level actions (Phase 1)
+// CAMPAIGN-LEVEL ACTIONS
 // =========================================================
-async function dispatchStormBlast(campaignId) {
-  if (!confirm(
-    `Storm blast campaign #${campaignId}?\n\n` +
-    `Dispatches to jh-storm-broadcaster which will fan out into:\n` +
-    `  • Top 50 priority leads → outbound calls\n` +
-    `  • Next 150 → ringless voicemail drops\n` +
-    `  • Rest → email cadence (no extra cost)\n\n` +
-    `This is a live action. Real calls will be placed.`
-  )) return;
-  const btn = document.getElementById('stormBlastBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span>';
+
+// Launch email drip — the ONE-CLICK launch button. Creates a Defcon-1
+// drip campaign tied to this polygon, enrolls all eligible leads, and
+// the cron starts dispatching emails through Smartlead within 5 min.
+//
+// Flow:
+//   1. POST /api/admin/drip { action: 'create_campaign', name, sequence_id: 1, source_campaign_id, metadata }
+//   2. POST /api/admin/drip { action: 'enroll_from_polygon', drip_campaign_id, source_campaign_id }
+//   3. Toast w/ stats + scroll to the new "Active outbound" section
+async function launchEmailDrip(polygonCampaign) {
+  // Fetch sequences first so we can show Charlie which one we'll use
+  let sequenceId = 1;   // Defcon-1 default
+  let sequenceName = 'Defcon-1 — Own the polygon';
   try {
-    const res = await fetch('/api/admin/lindy', {
+    const seqRes = await fetch('/api/admin/drip?type=sequences').then(r => r.json());
+    const def = (seqRes.sequences || []).find(s => s.is_default);
+    if (def) { sequenceId = def.id; sequenceName = def.name; }
+  } catch {}
+
+  const leadCount = polygonCampaign.property_hits || polygonCampaign.contact_hits || 0;
+  if (!confirm(
+    `🚀 Launch "${sequenceName}" on "${polygonCampaign.name}"?\n\n` +
+    `What happens next:\n` +
+    `  1. Creates a new drip campaign tied to this polygon\n` +
+    `  2. Bouncer scrubs every lead's email (60-day cache, ~$0.006 each)\n` +
+    `  3. Enrolls every non-opted-out lead with a deliverable email\n` +
+    `  4. Smartlead campaign auto-creates with all 3 mailboxes attached\n` +
+    `  5. First batch fires at the next 5-min cron tick\n` +
+    `  6. Cap: 45 emails/day for week 1 (Smartlead's safe ramp)\n\n` +
+    `Source polygon has ${leadCount} leads. Final enrollment count depends on email validity.\n\n` +
+    `This sends real emails. Confirm?`
+  )) return;
+
+  const btn = document.getElementById('launchDripBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Creating...';
+
+  try {
+    // Step 1: create the drip campaign
+    const stormDate = new Date().toISOString().slice(0, 10);
+    const dripName = `${polygonCampaign.name} · ${stormDate} · ${sequenceName.split('—')[0].trim()}`.slice(0, 120);
+    const createRes = await fetch('/api/admin/drip', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action: 'storm_blast', campaign_id: campaignId }),
+      body: JSON.stringify({
+        action: 'create_campaign',
+        name: dripName,
+        sequence_id: sequenceId,
+        source_campaign_id: polygonCampaign.id,
+        metadata: { storm_date: stormDate, source: 'admin_ui_launch_button' },
+      }),
     });
-    const data = await res.json();
-    if (data.ok) {
-      alert(`✓ Storm blast dispatched.\nLead count: ${data.lead_count}\nJob ID: ${data.job_id}`);
-    } else {
-      alert('Failed: ' + (data.error || 'unknown'));
+    const createData = await createRes.json();
+    if (!createData.ok) {
+      alert('Failed to create drip: ' + (createData.error || 'unknown'));
+      return;
     }
+    const dripId = createData.campaign.id;
+
+    btn.innerHTML = '<span class="spin"></span> Enrolling leads...';
+
+    // Step 2: enroll the polygon's leads
+    const enrollRes = await fetch('/api/admin/drip', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'enroll_from_polygon',
+        drip_campaign_id: dripId,
+        source_campaign_id: polygonCampaign.id,
+      }),
+    });
+    const enrollData = await enrollRes.json();
+    if (!enrollData.ok) {
+      alert(`Drip created (ID ${dripId}) but enrollment failed: ${enrollData.error || 'unknown'}\n\nYou can retry from the Active Outbound section.`);
+      return;
+    }
+
+    // Success — close drawer + scroll to Active Outbound + toast
+    document.getElementById('drawerHost').innerHTML = '';
+    if (typeof pollDrip === 'function') pollDrip();
+    document.getElementById('drip')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => {
+      alert(
+        `✓ Drip launched: "${dripName}"\n\n` +
+        `Enrolled: ${enrollData.enrolled} leads\n` +
+        `Skipped:  ${enrollData.skipped} (opted out / no eligible email)\n` +
+        `Source:   ${enrollData.source_lead_count} total leads in polygon\n\n` +
+        `First batch fires within 5 minutes via cron.\n` +
+        `Track progress in Active outbound below — engagement events ` +
+        `(opens, clicks, replies) update live.`
+      );
+    }, 600);
   } catch (err) {
     alert('Error: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '⚡ Storm blast →';
+    btn.innerHTML = '🚀 Launch email drip →';
   }
 }
 
