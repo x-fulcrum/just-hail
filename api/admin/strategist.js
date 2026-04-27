@@ -82,6 +82,44 @@ WHICH LINDY TOOL TO USE:
 - For DEDICATED PIPELINE actions (call THIS lead, blast THIS campaign) → use the specialized lindy_* tools
 - For RESEARCH that needs structure (county appraisal lookup) → use lindy_enrich_lead
 
+DRIP ORCHESTRATOR — the SALES ENGINE (use these for "launch a drip" / "where are my campaigns" / "show me lead X's drip status"):
+- list_drip_sequences           : show available templates (Defcon-1, Light Nudge, custom)
+- list_drip_campaigns           : running drips with stats
+- get_drip_campaign             : detail of one drip + recent touches
+- create_drip_campaign          : new drip on a polygon (REQUIRES confirm:true)
+- enroll_polygon_in_drip        : enroll EVERY non-opted-out lead from a polygon (REQUIRES confirm:true)
+- enroll_leads_in_drip          : enroll specific lead IDs (REQUIRES confirm:true)
+- pause/resume/abort_drip_campaign : lifecycle controls (abort REQUIRES confirm)
+- get_lead_drip_state           : full timeline for ONE lead in ONE drip (touches, opens, clicks, replies)
+- force_send_to_lead            : immediate custom SMS/email override (REQUIRES confirm)
+
+LAUNCH FLOW for "launch defcon-1 drip on my Round Rock polygon":
+  1. list_drip_sequences → find the Defcon-1 sequence_id
+  2. search_our_campaigns → find the Round Rock polygon's campaign_id
+  3. create_drip_campaign with name="Round Rock {date} Defcon-1", sequence_id, source_campaign_id, confirm:true
+  4. enroll_polygon_in_drip with new drip_campaign_id + source_campaign_id, confirm:true
+  5. Confirm to Charlie: "Enrolled X leads. First emails go out at the next 5-min cron tick."
+
+VALIDATION GATES (Hailey runs these BEFORE any cold outreach):
+- verify_email                  : Bouncer check (cached 60d). Skip undeliverable + toxic.
+- verify_phone                  : Twilio Lookup + DNC check. Returns safe_to_sms + safe_to_call.
+- check_api_health              : current status of all integrations. Use to debug "why didn't X go out?"
+
+SCRAPING + RESEARCH:
+- firecrawl_scrape              : scrape a JS-heavy page → markdown
+- browseruse_run                : autonomous browser for multi-step web tasks (login, form fill, scrape) — returns live_url Charlie can watch
+
+DOCUMENT PIPELINE:
+- parse_estimate                : Claude vision parses PDF/image → Drive + Sheets + DB
+- sheets_append                 : write to Sheets ledger
+- sheets_read                   : read from Sheets ledger
+- drive_list                    : list files in our Drive folder
+
+TCPA HARD RULE — NEVER VIOLATE:
+- Cold SMS is DISABLED in the default Defcon-1 sequence. Email-only.
+- If Charlie asks to "add SMS to the drip" — do it ONLY for opted-in leads (form submitters with smsConsent=true).
+- The send_sms layer ALREADY enforces DNC + opt-out + quiet hours. Trust the gates, don't bypass them.
+
 ENGAGEMENT SAFETY RULES (NON-NEGOTIABLE):
 - Drafting + enrichment are fine to do proactively when Charlie asks. Drafts don't send. Enrichment is read-only research.
 - NEVER approve a draft without Charlie explicitly saying "approve" or similar.
@@ -335,6 +373,128 @@ const TOOLS = [
       lead_id: { type: 'integer', description: 'Optional — link this delegation to a specific lead in our CRM.' },
       campaign_id: { type: 'integer', description: 'Optional — link to a campaign.' },
       wait_for_result: { type: 'boolean', description: 'If true, polls for up to 25s waiting for the assistant to call back. Use for research/lookup tasks where Charlie expects a synchronous answer in chat.' },
+    }}},
+
+  // ============================================================
+  // PHASE 2 — DRIP ORCHESTRATOR + VALIDATION + ENRICHMENT TOOLS
+  // ============================================================
+  { name: 'list_drip_sequences',
+    description: 'List all available drip sequence templates (Defcon-1, Light Nudge, custom). Returns id + name + total_days + step_count for each.',
+    input_schema: { type: 'object', properties: {}}},
+  { name: 'list_drip_campaigns',
+    description: 'List all drip campaigns (running, paused, completed). Each row shows status, lead counts, engagement counts. Use to answer "what campaigns are active right now?"',
+    input_schema: { type: 'object', properties: {
+      status: { type: 'string', enum: ['draft','enrolling','active','paused','completed','aborted'], description: 'Optional filter' },
+    }}},
+  { name: 'get_drip_campaign',
+    description: 'Full detail of one drip campaign including sequence + recent touches. Use after list_drip_campaigns to drill into one.',
+    input_schema: { type: 'object', required: ['drip_campaign_id'], properties: {
+      drip_campaign_id: { type: 'integer' },
+    }}},
+  { name: 'create_drip_campaign',
+    description: "Create a NEW drip campaign on a polygon (or any lead group). Doesn't enroll leads yet — call enroll_polygon_in_drip after. REQUIRES `confirm: true`. Use when Charlie says 'launch defcon-1 on my round rock polygon' — first create_drip_campaign, then enroll_polygon_in_drip with the new campaign_id.",
+    input_schema: { type: 'object', required: ['name', 'sequence_id', 'confirm'], properties: {
+      name: { type: 'string', description: 'Human label like "Round Rock Apr-26 Defcon-1"' },
+      sequence_id: { type: 'integer', description: 'Which template sequence to apply' },
+      source_campaign_id: { type: 'integer', description: 'Optional — the polygon-source campaign these leads came from' },
+      storm_event_id: { type: 'integer', description: 'Optional — the storm event that motivated this drip' },
+      metadata: { type: 'object', description: 'Optional extra info like { storm_date: "Apr 24" } that gets used in template rendering' },
+      confirm: { type: 'boolean' },
+    }}},
+  { name: 'enroll_polygon_in_drip',
+    description: "Enroll EVERY non-opted-out lead from a polygon (source campaign) into a drip campaign. This is the typical 'launch' flow. REQUIRES `confirm: true` AND explicit Charlie instruction. Returns enrolled count + skipped count.",
+    input_schema: { type: 'object', required: ['drip_campaign_id', 'source_campaign_id', 'confirm'], properties: {
+      drip_campaign_id: { type: 'integer' },
+      source_campaign_id: { type: 'integer' },
+      confirm: { type: 'boolean' },
+    }}},
+  { name: 'enroll_leads_in_drip',
+    description: 'Enroll a SPECIFIC list of lead IDs into a drip. Use for partial enrollment or one-off additions. REQUIRES `confirm: true`.',
+    input_schema: { type: 'object', required: ['drip_campaign_id', 'lead_ids', 'confirm'], properties: {
+      drip_campaign_id: { type: 'integer' },
+      lead_ids: { type: 'array', items: { type: 'integer' }, maxItems: 1000 },
+      confirm: { type: 'boolean' },
+    }}},
+  { name: 'pause_drip_campaign',
+    description: 'Pause a drip campaign — no further sends until resumed. Reversible.',
+    input_schema: { type: 'object', required: ['drip_campaign_id'], properties: {
+      drip_campaign_id: { type: 'integer' },
+    }}},
+  { name: 'resume_drip_campaign',
+    description: 'Resume a paused drip campaign.',
+    input_schema: { type: 'object', required: ['drip_campaign_id'], properties: {
+      drip_campaign_id: { type: 'integer' },
+    }}},
+  { name: 'abort_drip_campaign',
+    description: 'PERMANENTLY abort a drip campaign. All in-flight leads stop receiving touches. NOT REVERSIBLE. REQUIRES `confirm: true`.',
+    input_schema: { type: 'object', required: ['drip_campaign_id', 'confirm'], properties: {
+      drip_campaign_id: { type: 'integer' },
+      confirm: { type: 'boolean' },
+    }}},
+  { name: 'get_lead_drip_state',
+    description: 'Get the full drip state + touch timeline for ONE lead in ONE drip campaign. Shows every email/SMS/voicemail attempt + opens/clicks/replies. Use for "why hasn\'t lead #X been touched yet?" or "what messages did lead #X receive?"',
+    input_schema: { type: 'object', required: ['drip_lead_state_id'], properties: {
+      drip_lead_state_id: { type: 'integer' },
+    }}},
+  { name: 'force_send_to_lead',
+    description: 'Override the drip schedule and immediately send a custom SMS or email to one lead. Bypasses the next scheduled step but still goes through DNC + opt-out + quiet-hours gates. REQUIRES `confirm: true` AND explicit chat instruction.',
+    input_schema: { type: 'object', required: ['drip_lead_state_id', 'channel', 'body', 'confirm'], properties: {
+      drip_lead_state_id: { type: 'integer' },
+      channel: { type: 'string', enum: ['sms', 'email'] },
+      subject: { type: 'string', description: 'Email subject (email only)' },
+      body: { type: 'string', description: 'The message body' },
+      confirm: { type: 'boolean' },
+    }}},
+  { name: 'verify_email',
+    description: 'Verify an email via Bouncer (cached 60d). Returns deliverable/risky/undeliverable + toxicity score. Hailey runs this BEFORE any cold email send.',
+    input_schema: { type: 'object', required: ['email'], properties: {
+      email: { type: 'string' },
+    }}},
+  { name: 'verify_phone',
+    description: 'Verify a phone via Twilio Lookup (line type, carrier, valid) AND DNC scrub. Returns sms_able + safe_to_contact. Hailey runs this BEFORE any cold call/SMS.',
+    input_schema: { type: 'object', required: ['phone'], properties: {
+      phone: { type: 'string' },
+    }}},
+  { name: 'check_api_health',
+    description: 'Get the current health status of all integrations (Smartlead, Twilio, Resend, Bouncer, DNC, Drive, Sheets, Firecrawl, BrowserUse, PostHog). Use to answer "is the system healthy?" or to debug "why didn\'t my email go out?"',
+    input_schema: { type: 'object', properties: {}}},
+  { name: 'firecrawl_scrape',
+    description: 'Scrape ONE web page via Firecrawl, returning clean markdown. Best for JS-heavy sites that block normal fetch.',
+    input_schema: { type: 'object', required: ['url'], properties: {
+      url: { type: 'string' },
+      formats: { type: 'array', items: { type: 'string' }, description: 'Default: ["markdown"]. Can include "html", "screenshot", "links".' },
+    }}},
+  { name: 'browseruse_run',
+    description: 'Spawn an autonomous browser agent (BrowserUse Cloud) to perform a multi-step web task. Returns the live_url so Charlie can watch it work. Use for: logging into IHM and re-pulling cookies, scraping county records that need form submission, anything that requires real browser interaction.',
+    input_schema: { type: 'object', required: ['task'], properties: {
+      task: { type: 'string', description: 'Plain-English description of what the browser should do.' },
+      max_steps: { type: 'integer', description: 'Default 30. Higher = more browser actions allowed.', minimum: 1, maximum: 100 },
+      allowed_domains: { type: 'array', items: { type: 'string' }, description: 'Optional safety filter — restrict to these domains.' },
+    }}},
+  { name: 'parse_estimate',
+    description: 'Parse an insurance estimate PDF/image via Claude vision → save to Drive + Sheets ledger + DB. Caller must provide the file as a publicly accessible URL OR pre-upload it via /api/admin/parse-estimate. Use when Charlie says "parse this estimate" with an attached file.',
+    input_schema: { type: 'object', required: ['file_url'], properties: {
+      file_url: { type: 'string', description: 'Publicly accessible URL to the file' },
+      mime_type: { type: 'string', description: 'Default: application/pdf' },
+      lead_id: { type: 'integer', description: 'Optional — link this estimate to a lead' },
+      kind: { type: 'string', enum: ['insurance_estimate','invoice','photo','other'], description: 'Default: insurance_estimate' },
+    }}},
+  { name: 'sheets_append',
+    description: "Append rows to a tab in our Google Sheets ledger. Common use: log a financial event Charlie reports verbally. Tab is auto-created if missing.",
+    input_schema: { type: 'object', required: ['tab', 'rows'], properties: {
+      tab: { type: 'string', description: 'Tab name (e.g. "Manual Notes")' },
+      rows: { type: 'array', items: { type: 'array' }, description: '2D array — each inner array is a row of cell values' },
+    }}},
+  { name: 'sheets_read',
+    description: 'Read a range from the Sheets ledger. Use to answer "how many estimates this month?" or "what\'s our gross today?"',
+    input_schema: { type: 'object', required: ['range'], properties: {
+      range: { type: 'string', description: 'A1 range like "Estimates!A1:Z100" or just "Estimates" for the whole tab' },
+    }}},
+  { name: 'drive_list',
+    description: 'List files in our Google Drive folder (the CMBF folder). Useful for finding past estimates or photos.',
+    input_schema: { type: 'object', properties: {
+      folder_id: { type: 'string', description: 'Optional subfolder — defaults to root' },
+      query: { type: 'string', description: 'Optional Drive search query like "name contains \'Allstate\'"' },
     }}},
 ];
 
@@ -863,6 +1023,216 @@ async function runTool(name, input) {
           out.calls = data || [];
         }
         return out;
+      }
+
+      // ============================================================
+      // PHASE 2 — Drip orchestrator + validation + enrichment
+      // ============================================================
+      case 'list_drip_sequences': {
+        const { data } = await supabase
+          .from('drip_sequences')
+          .select('id, name, description, is_default, total_days, steps')
+          .eq('is_archived', false)
+          .order('is_default', { ascending: false });
+        return { sequences: (data || []).map(s => ({
+          id: s.id, name: s.name, description: s.description,
+          is_default: s.is_default, total_days: s.total_days,
+          step_count: Array.isArray(s.steps) ? s.steps.length : 0,
+          channels: [...new Set((s.steps || []).map(x => x.channel))],
+        })) };
+      }
+      case 'list_drip_campaigns': {
+        let q = supabase.from('drip_campaigns').select(`
+          id, name, status, total_leads, active_leads, completed_leads, opted_out_leads,
+          hot_leads, emails_sent, emails_opened, emails_clicked, emails_replied,
+          sms_sent, voicemails_dropped, created_at, launched_at,
+          drip_sequences ( name )
+        `).order('created_at', { ascending: false }).limit(50);
+        if (input.status) q = q.eq('status', input.status);
+        const { data } = await q;
+        return { campaigns: data || [] };
+      }
+      case 'get_drip_campaign': {
+        const id = parseInt(input.drip_campaign_id, 10);
+        if (!id) return { error: 'drip_campaign_id required' };
+        const { data: campaign } = await supabase
+          .from('drip_campaigns')
+          .select('*, drip_sequences(*), campaigns(name)')
+          .eq('id', id).single();
+        if (!campaign) return { error: 'not found' };
+        const { data: recent } = await supabase
+          .from('drip_touches')
+          .select('id, created_at, channel, event_type, recipient, lead_id, step_number')
+          .eq('drip_campaign_id', id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        return { campaign, recent_touches: recent || [] };
+      }
+      case 'create_drip_campaign': {
+        if (input.confirm !== true) return { error: 'confirm must be true' };
+        if (!input.name || !input.sequence_id) return { error: 'name + sequence_id required' };
+        const { data, error } = await supabase.from('drip_campaigns').insert({
+          name: input.name,
+          sequence_id: input.sequence_id,
+          source_campaign_id: input.source_campaign_id || null,
+          storm_event_id: input.storm_event_id || null,
+          status: 'draft',
+          triggered_by: 'strategist',
+          triggered_by_user: 'charlie',
+          metadata: input.metadata || {},
+        }).select('*').single();
+        if (error) return { error: error.message };
+        return { ok: true, drip_campaign: data };
+      }
+      case 'enroll_polygon_in_drip': {
+        if (input.confirm !== true) return { error: 'confirm must be true. This enrolls EVERY non-opted-out lead from the polygon into a multi-touch drip — real outbound.' };
+        const { data: leads } = await supabase
+          .from('leads').select('id')
+          .eq('campaign_id', input.source_campaign_id)
+          .eq('opted_out', false)
+          .limit(5000);
+        if (!leads?.length) return { error: 'no eligible leads in source campaign' };
+        const { enrollLeads } = await import('../../lib/drip-engine.js');
+        const result = await enrollLeads({
+          drip_campaign_id: input.drip_campaign_id,
+          lead_ids: leads.map(l => l.id),
+          source: 'strategist_polygon',
+        });
+        return { ...result, source_lead_count: leads.length };
+      }
+      case 'enroll_leads_in_drip': {
+        if (input.confirm !== true) return { error: 'confirm must be true' };
+        const { enrollLeads } = await import('../../lib/drip-engine.js');
+        return await enrollLeads({
+          drip_campaign_id: input.drip_campaign_id,
+          lead_ids: input.lead_ids,
+          source: 'strategist',
+        });
+      }
+      case 'pause_drip_campaign': {
+        await supabase.from('drip_campaigns').update({
+          status: 'paused', paused_at: new Date().toISOString(),
+        }).eq('id', input.drip_campaign_id);
+        return { ok: true, drip_campaign_id: input.drip_campaign_id };
+      }
+      case 'resume_drip_campaign': {
+        await supabase.from('drip_campaigns').update({
+          status: 'active', paused_at: null,
+        }).eq('id', input.drip_campaign_id);
+        return { ok: true, drip_campaign_id: input.drip_campaign_id };
+      }
+      case 'abort_drip_campaign': {
+        if (input.confirm !== true) return { error: 'confirm must be true. NOT REVERSIBLE.' };
+        await supabase.from('drip_campaigns').update({
+          status: 'aborted', completed_at: new Date().toISOString(),
+        }).eq('id', input.drip_campaign_id);
+        await supabase.from('drip_lead_state').update({
+          status: 'completed', scheduled_at: null,
+        }).eq('drip_campaign_id', input.drip_campaign_id).eq('status', 'active');
+        return { ok: true, aborted_drip_campaign_id: input.drip_campaign_id };
+      }
+      case 'get_lead_drip_state': {
+        const { data: state } = await supabase
+          .from('drip_lead_state')
+          .select('*, leads(first_name,last_name,email,phone,mobile,street,city,state,zip,opted_out), drip_campaigns(name, sequence_id)')
+          .eq('id', input.drip_lead_state_id).single();
+        if (!state) return { error: 'not found' };
+        const { data: timeline } = await supabase
+          .from('drip_touches')
+          .select('id, created_at, channel, event_type, recipient, sender, subject, body, step_number, error_message, link_clicked, reply_body')
+          .eq('drip_lead_state_id', input.drip_lead_state_id)
+          .order('created_at');
+        return { state, timeline: timeline || [] };
+      }
+      case 'force_send_to_lead': {
+        if (input.confirm !== true) return { error: 'confirm must be true. Sends a real message immediately.' };
+        const { data: state } = await supabase
+          .from('drip_lead_state').select('id, drip_campaign_id, lead_id, leads(first_name,email,phone,mobile)')
+          .eq('id', input.drip_lead_state_id).single();
+        if (!state) return { error: 'state not found' };
+        if (input.channel === 'sms') {
+          const { send } = await import('../../lib/twilio-sms.js');
+          const phone = state.leads.mobile || state.leads.phone;
+          return await send({
+            to: phone, body: input.body,
+            lead_id: state.lead_id,
+            drip_campaign_id: state.drip_campaign_id,
+            drip_lead_state_id: state.id,
+            source: 'manual_admin_strategist',
+          });
+        }
+        return { error: 'email force_send not yet wired in Strategist tool layer (use admin UI)' };
+      }
+      case 'verify_email': {
+        const { verify } = await import('../../lib/bouncer.js');
+        return await verify(input.email);
+      }
+      case 'verify_phone': {
+        const { lookup } = await import('../../lib/twilio-lookup.js');
+        const { check } = await import('../../lib/dnc.js');
+        const [lk, dnc] = await Promise.all([lookup(input.phone), check(input.phone)]);
+        return {
+          phone: input.phone,
+          lookup: lk,
+          dnc: dnc,
+          safe_to_sms: lk.sms_able && dnc.safe_to_contact,
+          safe_to_call: lk.valid && dnc.safe_to_contact,
+        };
+      }
+      case 'check_api_health': {
+        const { data } = await supabase.from('api_health').select('*').order('service');
+        return { services: data || [], note: 'Refresh data: /api/cron/api-health (runs every minute)' };
+      }
+      case 'firecrawl_scrape': {
+        const { scrape } = await import('../../lib/firecrawl.js');
+        return await scrape(input.url, { formats: input.formats || ['markdown'] });
+      }
+      case 'browseruse_run': {
+        const { run } = await import('../../lib/browseruse.js');
+        return await run({
+          task: input.task,
+          max_steps: input.max_steps || 30,
+          allowed_domains: input.allowed_domains || null,
+        });
+      }
+      case 'parse_estimate': {
+        // Fetch the file from the URL → base64 → call our parse endpoint
+        if (!input.file_url) return { error: 'file_url required' };
+        let buf;
+        try {
+          const fetchRes = await fetch(input.file_url);
+          if (!fetchRes.ok) return { error: `fetch_${fetchRes.status}` };
+          buf = Buffer.from(await fetchRes.arrayBuffer());
+        } catch (err) { return { error: 'fetch_failed: ' + err.message }; }
+        // Call our parse endpoint internally — simpler than re-implementing
+        const siteUrl = process.env.SITE_URL?.replace(/\/$/, '') || 'https://justhail.net';
+        const r = await fetch(`${siteUrl}/api/admin/parse-estimate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            filename: input.file_url.split('/').pop() || 'estimate.pdf',
+            mime_type: input.mime_type || 'application/pdf',
+            file_base64: buf.toString('base64'),
+            lead_id: input.lead_id || null,
+            kind: input.kind || 'insurance_estimate',
+          }),
+        });
+        return await r.json();
+      }
+      case 'sheets_append': {
+        const { appendRows, ensureTab } = await import('../../lib/google-sheets.js');
+        await ensureTab(input.tab);
+        return await appendRows(`${input.tab}!A1`, input.rows);
+      }
+      case 'sheets_read': {
+        const { readRange } = await import('../../lib/google-sheets.js');
+        const data = await readRange(input.range);
+        return { range: input.range, rows: data, row_count: data.length };
+      }
+      case 'drive_list': {
+        const { listFiles } = await import('../../lib/google-drive.js');
+        const files = await listFiles({ folderId: input.folder_id || null, query: input.query || null });
+        return { count: files.length, files };
       }
 
       default: return { error: 'unknown tool: ' + name };

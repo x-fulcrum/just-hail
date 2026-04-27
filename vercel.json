@@ -45,14 +45,46 @@
     "api/admin/assistant.js": {
       "maxDuration": 30
     },
+    "api/admin/drip.js": {
+      "maxDuration": 60
+    },
+    "api/admin/api-health.js": {
+      "maxDuration": 10
+    },
+    "api/admin/parse-estimate.js": {
+      "maxDuration": 90
+    },
     "api/cron/daily-recap.js": {
       "maxDuration": 60
+    },
+    "api/cron/drip-tick.js": {
+      "maxDuration": 60
+    },
+    "api/cron/api-health.js": {
+      "maxDuration": 60
+    },
+    "api/webhooks/smartlead/event.js": {
+      "maxDuration": 15
+    },
+    "api/webhooks/twilio/status.js": {
+      "maxDuration": 10
+    },
+    "api/webhooks/twilio/inbound-sms.js": {
+      "maxDuration": 15
     }
   },
   "crons": [
     {
       "path": "/api/cron/daily-recap",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/drip-tick",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/api-health",
+      "schedule": "*/2 * * * *"
     }
   ],
   "cleanUrls": true,
