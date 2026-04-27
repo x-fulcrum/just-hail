@@ -31,6 +31,16 @@ export default async function handler(req, res) {
     const jhDripId = parseInt(cfields.jh_drip_id, 10) || null;
     const jhStep   = parseInt(cfields.jh_drip_step, 10) || null;
     const recipient = body.email || body.lead_data?.email || null;
+    // Which warm mailbox actually sent? Smartlead exposes this in several
+    // shapes depending on event type — try them all so the leads UI can
+    // show "sent from yates@justsdr.co" instead of "(smartlead pool)".
+    const fromEmail =
+      body.from_email
+      || body.email_account?.from_email
+      || body.email_account?.email
+      || body.sender_email
+      || body.sender?.email
+      || null;
 
     // Map Smartlead event → our event_type
     const map = {
@@ -56,7 +66,9 @@ export default async function handler(req, res) {
       stateRow = data;
     }
 
-    // Insert touch row
+    // Insert touch row. The `sender` column captures which warm mailbox
+    // delivered (yates@/gordon.pierce@/belinda.ramos@) so the admin UI
+    // shows actual mailbox attribution, not just "smartlead pool".
     await supabase.from('drip_touches').insert({
       drip_campaign_id:  jhDripId,
       lead_id:           jhLeadId,
@@ -65,6 +77,7 @@ export default async function handler(req, res) {
       channel:           'email',
       event_type:        ourEventType,
       recipient:         recipient,
+      sender:            fromEmail,
       provider:          'smartlead',
       provider_message_id: body.message_id || body.smartlead_message_id || null,
       provider_response: body,
