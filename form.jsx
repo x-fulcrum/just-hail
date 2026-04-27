@@ -71,6 +71,7 @@ function SmartForm({ accent }) {
     name: '', email: '', phone: '', zip: '',
     vehicle: '', year: '', damage: '', insurer: '',
     severity: 3, timeline: 'asap', notes: '',
+    smsConsent: false,        // ← TCPA / Twilio TFV: explicit SMS opt-in
   });
   const [touched, setTouched] = React.useState({});
   const [submitted, setSubmitted] = React.useState(false);
@@ -88,6 +89,7 @@ function SmartForm({ accent }) {
     zip: !/^\d{5}$/.test(data.zip) ? '5-digit ZIP' : '',
     vehicle: data.vehicle.trim().length < 3 ? 'Make and model' : '',
     year: !/^\d{4}$/.test(data.year) || +data.year < 1980 || +data.year > 2027 ? '4-digit year' : '',
+    smsConsent: !data.smsConsent ? 'Please confirm SMS consent so we can text you appointment updates' : '',
   };
   const validKeys = Object.keys(errors);
   const validCount = validKeys.filter(k => !errors[k]).length;
@@ -118,6 +120,9 @@ function SmartForm({ accent }) {
       submittedAt: new Date().toISOString(),
       source: location.hostname || 'justhail-preview',
       userAgent: navigator.userAgent,
+      smsConsentText: 'I agree to receive transactional SMS from Just Hail at the phone number above — appointment confirmations, status updates, and direct replies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.',
+      smsConsentVersion: '2026-04-26',
+      smsConsentCapturedAt: new Date().toISOString(),
     };
 
     setSubmitting(true);
@@ -287,9 +292,43 @@ function SmartForm({ accent }) {
         </div>
       </FormGroup>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 40, paddingTop: 32, borderTop: '1px solid var(--hair)', flexWrap: 'wrap', gap: 20 }}>
+      {/* SMS consent — required by TCPA + Twilio Toll-Free Verification.
+          Must be its own checkbox (not buried in T&C) per CTIA guidelines. */}
+      <div style={{
+        marginTop: 32, padding: '18px 22px',
+        background: 'var(--surface-alt, #f8f6f0)',
+        border: '1px solid ' + (touched.smsConsent && errors.smsConsent ? accent : 'var(--hair)'),
+        borderRadius: 2,
+      }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', fontSize: 13, lineHeight: 1.55, color: 'var(--ink)' }}>
+          <input
+            type="checkbox"
+            checked={data.smsConsent}
+            onChange={(e) => { set('smsConsent', e.target.checked); blur('smsConsent'); }}
+            style={{ marginTop: 3, width: 16, height: 16, accentColor: accent, flexShrink: 0, cursor: 'pointer' }}
+          />
+          <span>
+            <strong style={{ display: 'block', marginBottom: 4 }}>Yes, you can text me about my hail damage inspection.</strong>
+            <span style={{ color: 'var(--ink-dim)', fontSize: 12 }}>
+              I agree to receive transactional SMS from Just Hail at the phone number above —
+              appointment confirmations, status updates while my vehicle is in the shop, and
+              direct replies from Charlie. Msg &amp; data rates may apply. Reply STOP at any
+              time to opt out, HELP for help.
+              See our <a href="/privacy" target="_blank" rel="noopener" style={{ color: accent }}>Privacy Policy</a>
+              {' '}and <a href="/terms" target="_blank" rel="noopener" style={{ color: accent }}>Terms</a>.
+            </span>
+          </span>
+        </label>
+        {touched.smsConsent && errors.smsConsent && (
+          <div style={{ marginTop: 8, marginLeft: 28, color: accent, fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+            {errors.smsConsent}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, paddingTop: 32, borderTop: '1px solid var(--hair)', flexWrap: 'wrap', gap: 20 }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-dim)', letterSpacing: '0.08em', maxWidth: 400 }}>
-          By requesting an estimate you agree to be contacted by Just Hail. We never share your data.
+          By requesting an estimate you agree to be contacted by Just Hail. We never share your data with third parties.
         </div>
         <button type="submit" disabled={submitting} style={{
           padding: '18px 32px', background: accent, color: '#0a0b10',
@@ -463,8 +502,8 @@ function Footer({ accent }) {
           <div>© 2026 Just Hail, LLC · All rights reserved · A+ BBB Accredited</div>
           <div style={{ display: 'flex', gap: 24 }}>
             <a href="admin.html" style={{ color: 'var(--ink-dim)', textDecoration: 'none', opacity: 0.5 }}>Admin</a>
-            <a href="#" style={{ color: 'var(--ink-dim)', textDecoration: 'none' }}>Privacy</a>
-            <a href="#" style={{ color: 'var(--ink-dim)', textDecoration: 'none' }}>Terms</a>
+            <a href="/privacy" style={{ color: 'var(--ink-dim)', textDecoration: 'none' }}>Privacy</a>
+            <a href="/terms" style={{ color: 'var(--ink-dim)', textDecoration: 'none' }}>Terms</a>
             <a href="#" style={{ color: 'var(--ink-dim)', textDecoration: 'none' }}>Warranty</a>
           </div>
         </div>
