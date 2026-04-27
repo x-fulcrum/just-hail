@@ -3142,6 +3142,13 @@ async function loadGaStats() {
       // instead of a red error. The Vercel Analytics buttons in the header
       // already give Charlie a working path to live data.
       if (status) { status.textContent = 'GA pending · use Vercel Analytics'; status.style.color = 'var(--amber)'; }
+      // Stop polling on unrecoverable errors (permission denied, etc.) —
+      // no point hammering the endpoint every 60s if it can never succeed
+      // until Charlie reconfigures Google permissions.
+      if (json.unrecoverable && gaPollTimer) {
+        clearInterval(gaPollTimer);
+        gaPollTimer = null;
+      }
       const tilesContainer = document.getElementById('gaStatTiles');
       if (tilesContainer && !tilesContainer.dataset.placeholderShown) {
         tilesContainer.dataset.placeholderShown = '1';

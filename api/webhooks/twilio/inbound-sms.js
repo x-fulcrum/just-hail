@@ -173,22 +173,26 @@ export default async function handler(req, res) {
         last_channel: 'sms',
       }).eq('id', leadId);
     }
-    // Alert Charlie via SMS (to his cell). Bypass gates: this is a transactional
-    // notification to him about HIS business, not a cold send.
-    try {
-      const charlieCell = '+15122213013';
-      const leadName = lead ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() : 'unknown lead';
-      const preview = Body.length > 80 ? Body.slice(0, 80) + '…' : Body;
-      await sendSms({
-        to: charlieCell,
-        body: `🔥 HOT LEAD reply from ${leadName} (${From}): "${preview}"\nCheck admin: justhail.net/admin`,
-        bypass_quiet_hours: true,
-        bypass_dnc: true,
-        bypass_lookup: true,
-        source: 'reply',
-      });
-    } catch (e) {
-      console.warn('[inbound-sms] alert to Charlie failed:', e.message);
+    // Alert Charlie via SMS (to his cell) — ONLY if this matches a real
+    // lead in our CRM. Random inbound SMS from non-leads gets logged but
+    // doesn't ping Charlie (avoids spam from wrong-numbers / pranks /
+    // testing). Bypass gates: this is a transactional notification.
+    if (leadId) {
+      try {
+        const charlieCell = '+15122213013';
+        const leadName = lead ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'lead' : 'lead';
+        const preview = Body.length > 80 ? Body.slice(0, 80) + '…' : Body;
+        await sendSms({
+          to: charlieCell,
+          body: `🔥 HOT LEAD reply from ${leadName} (${From}): "${preview}"\nCheck admin: justhail.net/admin`,
+          bypass_quiet_hours: true,
+          bypass_dnc: true,
+          bypass_lookup: true,
+          source: 'reply',
+        });
+      } catch (e) {
+        console.warn('[inbound-sms] alert to Charlie failed:', e.message);
+      }
     }
 
     // Empty TwiML = no auto-reply. Charlie handles personally.
