@@ -53,8 +53,8 @@ async function handleGet(req, res) {
         id, name, status, sequence_id, source_campaign_id, storm_event_id,
         created_at, launched_at, completed_at,
         total_leads, active_leads, completed_leads, opted_out_leads, bounced_leads, hot_leads,
-        emails_sent, emails_opened, emails_clicked, emails_replied, emails_bounced,
-        sms_sent, sms_replied, voicemails_dropped, calls_made,
+        emails_queued, emails_sent, emails_opened, emails_clicked, emails_replied, emails_bounced,
+        sms_queued, sms_sent, sms_replied, voicemails_dropped, calls_made,
         drip_sequences ( name, total_days ),
         campaigns ( name )
       `)
