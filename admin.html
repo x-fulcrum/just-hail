@@ -282,31 +282,36 @@
   <!-- Main -->
   <main style="padding: 40px 28px 80px; max-width: 1600px; margin: 0 auto;">
 
-    <!-- ================ COMMAND CENTER (embedded agent) ================ -->
+    <!-- ================ COMMAND CENTER (Hailey — full-bleed) ================ -->
     <section id="cmdcenter" style="margin-bottom: 64px;">
       <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
         <div>
           <div class="eyebrow" style="color: var(--green);">· Command Center</div>
-          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Drive everything</h1>
-          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Single chat surface for SMS, email, calls, research, code, and dispatching every specialized <span class="mono" style="font-size: 12px;">jh-*</span> agent. Hit <span class="mono" style="font-size: 12px;">⛶</span> for fullscreen.</p>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Hailey</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Your AI orchestrator — sales, document parsing, hail research. She drives campaigns, parses estimates, updates Sheets, queues drips, and delegates voice/SMS to specialized agents. Streaming responses, full DB access, your Twilio + Resend + Drive + QuickBooks all wired in. Hit <span class="mono" style="font-size: 12px;">⛶</span> for fullscreen.</p>
         </div>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <button class="btn btn-ghost" id="lcReloadBtn" title="Reload the agent (clears the current task)" style="font-size: 12px; padding: 8px 14px;">↻ Reload</button>
+          <button class="btn btn-ghost" id="lcOpenBtn" title="Open the chat panel" style="font-size: 12px; padding: 8px 14px;">💬 Open chat</button>
           <button class="btn btn-ghost" id="lcFullscreenBtn" title="Expand to fullscreen — Esc or ✕ to exit" style="font-size: 12px; padding: 8px 14px;">⛶ Fullscreen</button>
         </div>
       </div>
 
-      <div class="card" id="lcCard" style="padding: 0; overflow: hidden; position: relative;">
-        <iframe id="lcFrame"
-                src="https://chat.lindy.ai/embedded/lindyEmbed/5d975ac1-8426-4242-8818-a27b61853a24"
-                title="Command Center"
-                allow="clipboard-read; clipboard-write; microphone; autoplay"
-                referrerpolicy="origin"></iframe>
+      <div class="card" id="lcCard" style="padding: 0; overflow: hidden; position: relative; min-height: 540px;">
+        <!-- Hailey chat slot — populated by initStrategist when this section mounts.
+             For now, an empty card with a placeholder until Phase 2 wires Hailey
+             inline. Use the bottom-right pill or "Open chat" above to interact. -->
+        <div id="lcPlaceholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 540px; padding: 40px; text-align: center; gap: 18px;">
+          <div style="font-family: var(--font-display); font-size: 32px; font-weight: 400; letter-spacing: -0.01em;">Hailey is ready.</div>
+          <div class="dim" style="max-width: 540px; font-size: 13px; line-height: 1.55;">Click <strong>Open chat</strong> above (or use the bottom-right pill) to start a conversation. Phase 2 will mount Hailey inline here as a full-bleed streaming chat surface with drag-drop attachments and per-lead drawers.</div>
+          <div class="mono dim" style="font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding-top: 12px; border-top: 1px solid var(--hair); width: 60%;">
+            Roadmap · Sales orchestrator · Document pipeline · Research partner
+          </div>
+        </div>
       </div>
 
       <div style="margin-top: 12px; display: flex; justify-content: space-between; font-size: 11px;" class="mono dim">
-        <div>Tip: ask it to <em>"have jh-outbound-caller call lead #X"</em> to delegate to a specialized agent</div>
-        <div>Skill set + system prompt configured externally</div>
+        <div>Tip: ask Hailey to <em>"enroll all leads in campaign #3 in the 7-day drip"</em> or <em>"parse this estimate"</em></div>
+        <div>Powered by Claude Opus 4.7</div>
       </div>
     </section>
 
@@ -691,14 +696,14 @@
   </main>
 
   <!-- ================ STRATEGIST CHAT WIDGET ================ -->
-  <button id="stratToggle" type="button" title="Hail canvassing strategist — ask where to go next">
-    <span class="dot"></span> 🧠 Strategist
+  <button id="stratToggle" type="button" title="Open Hailey — your AI orchestrator">
+    <span class="dot"></span> 💬 Hailey
   </button>
   <div id="stratPanel" style="display: none;">
     <header>
       <div style="flex: 1;">
-        <div class="title">Hail Strategist</div>
-        <div class="subtitle">· Claude Opus · Tavily · Exa · IHM</div>
+        <div class="title">Hailey</div>
+        <div class="subtitle">· Claude Opus · sales · docs · research</div>
       </div>
       <button id="stratSettingsBtn" type="button" title="Advanced settings">⚙</button>
       <button id="stratClearBtn" type="button" title="Clear conversation">↺</button>
@@ -714,17 +719,17 @@
     </div>
     <div id="stratBody">
       <div id="stratWelcome">
-        <h3>Where should we hunt today?</h3>
-        <p>Ask about storms, neighborhoods, or social chatter. I can see your campaigns, pull live IHM swath data, and search Reddit / NextDoor / X for people actually posting damage.</p>
-        <button class="strat-starter" data-q="Based on what I've already covered, where should I pull my next polygon?">Where should I go next based on my coverage?</button>
-        <button class="strat-starter" data-q="Find people posting hail damage photos or asking for PDR referrals in Central Texas in the last 2 weeks.">Find social posts about hail damage in Central Texas</button>
+        <h3>What do you need done?</h3>
+        <p>Sales orchestrator + document parser + hail research partner. I can run drip campaigns, send SMS/email, queue calls, parse insurance estimates into Sheets + QuickBooks, find leads on Reddit/NextDoor, and pull live IHM data.</p>
+        <button class="strat-starter" data-q="Based on what I've already covered, where should I pull my next polygon?">Where should I pull my next polygon?</button>
+        <button class="strat-starter" data-q="Find people posting hail damage photos or asking for PDR referrals in Central Texas in the last 2 weeks.">Find people posting hail damage in Central TX</button>
         <button class="strat-starter" data-q="What hail events hit Central Texas in the last 14 days and which zip codes took the worst of it?">Recent Central Texas hail recap</button>
         <button class="strat-starter" data-q="Give me a read on my newest campaign — how does it look vs. the storm track, and what should I prioritize?">Read my newest campaign</button>
       </div>
       <div id="stratMessages"></div>
     </div>
     <form id="stratForm">
-      <textarea id="stratInput" rows="1" placeholder="Ask the strategist…" autocomplete="off"></textarea>
+      <textarea id="stratInput" rows="1" placeholder="Ask Hailey anything…" autocomplete="off"></textarea>
       <button type="submit" id="stratSend">Send</button>
     </form>
   </div>
@@ -3405,7 +3410,7 @@ function fmtSpc(iso) {
       });
       if (!res.ok) {
         const errTxt = await res.text().catch(() => '');
-        bubble.innerHTML = renderAssistantText(`⚠️ Strategist error: ${res.status} ${errTxt.slice(0, 240)}`);
+        bubble.innerHTML = renderAssistantText(`⚠️ Hailey error: ${res.status} ${errTxt.slice(0, 240)}`);
         thinkingInd.remove();
         return;
       }
@@ -3499,27 +3504,28 @@ function fmtSpc(iso) {
 })();
 
 // =========================================================
-// LINDY COMMAND CENTER — full-width embedded section
+// COMMAND CENTER — Hailey panel hooks
 // =========================================================
-// Native Lindy chat iframe lives in #cmdcenter at the top of admin.
-// The agent on the other side has whatever skills/tools you've enabled
-// in the Lindy app — Twilio, Gmail, Calendar, web search, browser,
-// terminal, code, plus inter-agent delegation. All chat state lives
-// inside Lindy.
+// Phase 1: the Command Center section is a placeholder with two
+// quick-actions: "Open chat" (opens the Hailey/Strategist pill panel)
+// and "Fullscreen" (expands the card — for Phase 2 when Hailey is
+// mounted inline).
+// Phase 2: replace the placeholder with the streaming Hailey chat
+// itself, full-bleed in this card.
 // =========================================================
-(function initLindyCommandCenter() {
-  const card       = document.getElementById('lcCard');
-  const frame      = document.getElementById('lcFrame');
-  const reloadBtn  = document.getElementById('lcReloadBtn');
-  const fullBtn    = document.getElementById('lcFullscreenBtn');
-  const exitBtn    = document.getElementById('lcExitFullscreen');
-  if (!card || !frame) return;
+(function initCommandCenter() {
+  const card     = document.getElementById('lcCard');
+  const openBtn  = document.getElementById('lcOpenBtn');
+  const fullBtn  = document.getElementById('lcFullscreenBtn');
+  const exitBtn  = document.getElementById('lcExitFullscreen');
+  if (!card) return;
 
-  // Reload — wipes the current embed task; useful if it gets stuck
-  reloadBtn?.addEventListener('click', () => {
-    const url = frame.src;
-    frame.src = 'about:blank';
-    setTimeout(() => { frame.src = url; }, 80);
+  // "Open chat" — fire the same click that the bottom-right Hailey
+  // pill listens for. Initialized later (Strategist IIFE), so we
+  // dispatch on the toggle element directly.
+  openBtn?.addEventListener('click', () => {
+    const pill = document.getElementById('stratToggle');
+    if (pill) pill.click();
   });
 
   // Fullscreen toggle — same pattern as the forecast map
