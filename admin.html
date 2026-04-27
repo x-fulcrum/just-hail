@@ -122,37 +122,37 @@
   #stratSend { padding: 10px 16px; background: var(--accent); color: #0a0b10; border: none; border-radius: 2px; font-weight: 500; cursor: pointer; font-size: 13px; }
   #stratSend:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* ---- LINDY ASSISTANT BRIDGE — bottom-LEFT pill ---- */
-  #lindyToggle {
-    position: fixed; left: 24px; bottom: 24px; z-index: 70;
-    padding: 14px 20px; background: var(--surface-2); color: var(--ink);
-    border: 1px solid var(--hair-strong); border-radius: 40px; cursor: pointer;
-    font-family: var(--font-ui); font-weight: 600; font-size: 13px;
-    letter-spacing: 0.02em; box-shadow: 0 8px 28px rgba(0,0,0,0.35);
-    display: flex; align-items: center; gap: 8px;
-    transition: transform 160ms ease, box-shadow 160ms ease, border-color 140ms;
+  /* ---- LINDY COMMAND CENTER — full-width embedded section ---- */
+  #lcFrame {
+    width: 100%;
+    height: 720px;
+    border: none;
+    display: block;
+    background: var(--surface-2);
+    border-radius: 2px;
   }
-  #lindyToggle:hover { transform: translateY(-1px); border-color: var(--green); box-shadow: 0 10px 32px rgba(57,215,170,0.18); }
-  #lindyToggle .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.8s ease-in-out infinite; }
-  #lindyPanel {
-    position: fixed; left: 24px; bottom: 24px; z-index: 71;
-    width: 420px; max-width: calc(100vw - 48px);
-    height: 600px; max-height: calc(100vh - 48px);
-    background: var(--surface); border: 1px solid var(--hair-strong);
-    border-radius: 4px; box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-    display: flex; flex-direction: column; overflow: hidden;
-    animation: fadeIn 200ms ease-out;
+  #lcCard.lc-fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 900;
+    border-radius: 0;
+    margin: 0 !important;
   }
-  #lindyPanel header {
-    padding: 14px 18px; border-bottom: 1px solid var(--hair);
-    display: flex; align-items: center; gap: 12px; background: var(--surface-2);
+  #lcCard.lc-fullscreen #lcFrame {
+    height: 100vh;
+    border-radius: 0;
   }
-  #lindyPanel header .title { font-family: var(--font-display); font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
-  #lindyPanel header .subtitle { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); }
-  #lindyPanel header button { background: transparent; border: none; color: var(--ink-dim); cursor: pointer; font-size: 22px; line-height: 1; padding: 4px 8px; border-radius: 2px; }
-  #lindyPanel header button:hover { color: var(--ink); background: var(--surface); }
-  /* Lindy iframe — flex container fills the panel */
-  #lindyFrame { flex: 1 1 auto; border: none; width: 100%; min-height: 0; background: var(--surface); }
+  #lcExitFullscreen {
+    display: none;
+    position: fixed; top: 14px; right: 14px; z-index: 901;
+    padding: 10px 16px; font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: rgba(10,11,16,0.9); color: var(--ink);
+    border: 1px solid var(--hair-strong); border-radius: 2px;
+    cursor: pointer; backdrop-filter: blur(8px);
+  }
+  body.lc-fullscreen-active #lcExitFullscreen { display: block; }
+  body.lc-fullscreen-active { overflow: hidden; }
 
   /* ============================================================
      FORECAST MAP FULLSCREEN MODE
@@ -217,6 +217,9 @@
     /* Hail-forecast map a bit shorter on mobile (fullscreen button handles the rest) */
     #fcMap { height: 360px !important; }
 
+    /* Lindy Command Center — shorter on mobile (use Fullscreen for serious work) */
+    #lcFrame { height: 520px !important; }
+
     /* Day picker wraps more naturally */
     #fcDayPicker { gap: 4px !important; }
     .fc-day-btn { padding: 6px 10px !important; font-size: 10px !important; }
@@ -278,6 +281,35 @@
 
   <!-- Main -->
   <main style="padding: 40px 28px 80px; max-width: 1600px; margin: 0 auto;">
+
+    <!-- ================ LINDY COMMAND CENTER (embedded agent) ================ -->
+    <section id="cmdcenter" style="margin-bottom: 64px;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
+        <div>
+          <div class="eyebrow" style="color: var(--green);">· Command Center</div>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Lindy</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Native chat with your unified Lindy agent — Twilio SMS, Gmail, Calendar, Drive, web search, browser, terminal, code, and inter-agent delegation to every <span class="mono" style="font-size: 12px;">jh-*</span> specialized agent. Hit <span class="mono" style="font-size: 12px;">⛶</span> for fullscreen.</p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <button class="btn btn-ghost" id="lcReloadBtn" title="Reload the agent (clears the current chat task)" style="font-size: 12px; padding: 8px 14px;">↻ Reload</button>
+          <button class="btn btn-ghost" id="lcFullscreenBtn" title="Expand to fullscreen — Esc or ✕ to exit" style="font-size: 12px; padding: 8px 14px;">⛶ Fullscreen</button>
+          <a class="btn btn-ghost" id="lcOpenInLindy" href="https://chat.lindy.ai" target="_blank" rel="noopener" title="Open the agent in the Lindy app (full settings)" style="font-size: 12px; padding: 8px 14px; text-decoration: none;">↗ Open in Lindy</a>
+        </div>
+      </div>
+
+      <div class="card" id="lcCard" style="padding: 0; overflow: hidden; position: relative;">
+        <iframe id="lcFrame"
+                src="https://chat.lindy.ai/embedded/lindyEmbed/5d975ac1-8426-4242-8818-a27b61853a24"
+                title="Lindy Command Center"
+                allow="clipboard-read; clipboard-write; microphone; autoplay"
+                referrerpolicy="origin"></iframe>
+      </div>
+
+      <div style="margin-top: 12px; display: flex; justify-content: space-between; font-size: 11px;" class="mono dim">
+        <div>Embedded via <a href="https://chat.lindy.ai" target="_blank" rel="noopener" style="color: var(--ink-dim);">chat.lindy.ai</a> · skill set + system prompt configured in the Lindy app</div>
+        <div>Tip: ask it to <em>"have jh-outbound-caller call lead #X"</em> to delegate</div>
+      </div>
+    </section>
 
     <!-- ================ TRAFFIC ANALYTICS (GA4) ================ -->
     <section id="ga-stats" style="margin-bottom: 64px;">
@@ -698,27 +730,7 @@
     </form>
   </div>
 
-  <!-- ================ LINDY EMBED WIDGET ================ -->
-  <!-- Native Lindy chat iframe — full power of whichever agent's URL is below -->
-  <button id="lindyToggle" type="button" title="Talk to your Lindy agent — full chat UI with all tools">
-    <span class="dot"></span> 💬 Lindy
-  </button>
-  <div id="lindyPanel" style="display: none;">
-    <header>
-      <div style="flex: 1;">
-        <div class="title">Lindy</div>
-        <div class="subtitle">· native embed · all skills</div>
-      </div>
-      <button id="lindyExpandBtn" type="button" title="Expand">⛶</button>
-      <button id="lindyCloseBtn" type="button" title="Close">×</button>
-    </header>
-    <iframe id="lindyFrame"
-            src="https://chat.lindy.ai/embedded/lindyEmbed/5d975ac1-8426-4242-8818-a27b61853a24"
-            title="Lindy Embed"
-            style="flex: 1; border: none; width: 100%; min-height: 0; background: var(--surface);"
-            allow="clipboard-read; clipboard-write; microphone"
-            referrerpolicy="origin"></iframe>
-  </div>
+  <!-- Strategist widget closes here — Lindy moved to its own full-width section in <main> -->
 </div>
 
 <!-- Drawer for lead details -->
@@ -726,6 +738,9 @@
 
 <!-- Forecast fullscreen exit button — shown via body.fc-fullscreen-active class -->
 <button id="fcExitFullscreen" type="button">✕ Exit fullscreen</button>
+
+<!-- Lindy Command Center fullscreen exit — shown via body.lc-fullscreen-active -->
+<button id="lcExitFullscreen" type="button">✕ Exit fullscreen</button>
 
 <script>
 // =========================================================
@@ -3485,48 +3500,45 @@ function fmtSpc(iso) {
 })();
 
 // =========================================================
-// LINDY EMBED WIDGET (iframe)
+// LINDY COMMAND CENTER — full-width embedded section
 // =========================================================
-// Native Lindy chat panel. Just an iframe pointed at the embed URL.
-// The agent on the other side has whatever skills/tools we've enabled
-// in the Lindy app — Twilio, Gmail, Calendar, Web Search, etc.
-// All chat state, history, and routing live inside Lindy.
+// Native Lindy chat iframe lives in #cmdcenter at the top of admin.
+// The agent on the other side has whatever skills/tools you've enabled
+// in the Lindy app — Twilio, Gmail, Calendar, web search, browser,
+// terminal, code, plus inter-agent delegation. All chat state lives
+// inside Lindy.
 // =========================================================
-(function initLindyEmbed() {
-  const toggle    = document.getElementById('lindyToggle');
-  const panel     = document.getElementById('lindyPanel');
-  const closeBtn  = document.getElementById('lindyCloseBtn');
-  const expandBtn = document.getElementById('lindyExpandBtn');
-  if (!toggle || !panel) return;
-  toggle.style.display = 'flex';
+(function initLindyCommandCenter() {
+  const card       = document.getElementById('lcCard');
+  const frame      = document.getElementById('lcFrame');
+  const reloadBtn  = document.getElementById('lcReloadBtn');
+  const fullBtn    = document.getElementById('lcFullscreenBtn');
+  const exitBtn    = document.getElementById('lcExitFullscreen');
+  if (!card || !frame) return;
 
-  const OPEN_KEY = 'jh-lindy-open';
-  const SIZE_KEY = 'jh-lindy-expanded';
-
-  function applySize() {
-    const expanded = sessionStorage.getItem(SIZE_KEY) === '1';
-    panel.style.width  = expanded ? 'min(900px, calc(100vw - 48px))' : '420px';
-    panel.style.height = expanded ? 'calc(100vh - 48px)' : '600px';
-  }
-  function openPanel() {
-    panel.style.display = 'flex';
-    toggle.style.display = 'none';
-    sessionStorage.setItem(OPEN_KEY, '1');
-    applySize();
-  }
-  function closePanel() {
-    panel.style.display = 'none';
-    toggle.style.display = 'flex';
-    sessionStorage.removeItem(OPEN_KEY);
-  }
-  toggle.addEventListener('click', openPanel);
-  closeBtn.addEventListener('click', closePanel);
-  expandBtn.addEventListener('click', () => {
-    const cur = sessionStorage.getItem(SIZE_KEY) === '1';
-    sessionStorage.setItem(SIZE_KEY, cur ? '0' : '1');
-    applySize();
+  // Reload — wipes the current embed task; useful if it gets stuck
+  reloadBtn?.addEventListener('click', () => {
+    const url = frame.src;
+    frame.src = 'about:blank';
+    setTimeout(() => { frame.src = url; }, 80);
   });
-  if (sessionStorage.getItem(OPEN_KEY) === '1') openPanel();
+
+  // Fullscreen toggle — same pattern as the forecast map
+  function enterFullscreen() {
+    document.body.classList.add('lc-fullscreen-active');
+    card.classList.add('lc-fullscreen');
+  }
+  function exitFullscreen() {
+    document.body.classList.remove('lc-fullscreen-active');
+    card.classList.remove('lc-fullscreen');
+  }
+  fullBtn?.addEventListener('click', enterFullscreen);
+  exitBtn?.addEventListener('click', exitFullscreen);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && card.classList.contains('lc-fullscreen')) {
+      exitFullscreen();
+    }
+  });
 })();
 </script>
 </body>
