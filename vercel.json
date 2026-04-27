@@ -42,9 +42,6 @@
     "api/admin/inbox.js": {
       "maxDuration": 15
     },
-    "api/admin/assistant.js": {
-      "maxDuration": 30
-    },
     "api/admin/drip.js": {
       "maxDuration": 60
     },
