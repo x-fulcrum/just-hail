@@ -122,10 +122,10 @@
   #stratSend { padding: 10px 16px; background: var(--accent); color: #0a0b10; border: none; border-radius: 2px; font-weight: 500; cursor: pointer; font-size: 13px; }
   #stratSend:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* ---- LINDY COMMAND CENTER — full-width embedded section ---- */
+  /* ---- COMMAND CENTER — full-width embedded agent section ---- */
   #lcFrame {
     width: 100%;
-    height: 720px;
+    height: 540px;
     border: none;
     display: block;
     background: var(--surface-2);
@@ -217,8 +217,8 @@
     /* Hail-forecast map a bit shorter on mobile (fullscreen button handles the rest) */
     #fcMap { height: 360px !important; }
 
-    /* Lindy Command Center — shorter on mobile (use Fullscreen for serious work) */
-    #lcFrame { height: 520px !important; }
+    /* Command Center — shorter on mobile (use Fullscreen for serious work) */
+    #lcFrame { height: 390px !important; }
 
     /* Day picker wraps more naturally */
     #fcDayPicker { gap: 4px !important; }
@@ -282,32 +282,31 @@
   <!-- Main -->
   <main style="padding: 40px 28px 80px; max-width: 1600px; margin: 0 auto;">
 
-    <!-- ================ LINDY COMMAND CENTER (embedded agent) ================ -->
+    <!-- ================ COMMAND CENTER (embedded agent) ================ -->
     <section id="cmdcenter" style="margin-bottom: 64px;">
       <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
         <div>
           <div class="eyebrow" style="color: var(--green);">· Command Center</div>
-          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Lindy</h1>
-          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Native chat with your unified Lindy agent — Twilio SMS, Gmail, Calendar, Drive, web search, browser, terminal, code, and inter-agent delegation to every <span class="mono" style="font-size: 12px;">jh-*</span> specialized agent. Hit <span class="mono" style="font-size: 12px;">⛶</span> for fullscreen.</p>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Drive everything</h1>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Single chat surface for SMS, email, calls, research, code, and dispatching every specialized <span class="mono" style="font-size: 12px;">jh-*</span> agent. Hit <span class="mono" style="font-size: 12px;">⛶</span> for fullscreen.</p>
         </div>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <button class="btn btn-ghost" id="lcReloadBtn" title="Reload the agent (clears the current chat task)" style="font-size: 12px; padding: 8px 14px;">↻ Reload</button>
+          <button class="btn btn-ghost" id="lcReloadBtn" title="Reload the agent (clears the current task)" style="font-size: 12px; padding: 8px 14px;">↻ Reload</button>
           <button class="btn btn-ghost" id="lcFullscreenBtn" title="Expand to fullscreen — Esc or ✕ to exit" style="font-size: 12px; padding: 8px 14px;">⛶ Fullscreen</button>
-          <a class="btn btn-ghost" id="lcOpenInLindy" href="https://chat.lindy.ai" target="_blank" rel="noopener" title="Open the agent in the Lindy app (full settings)" style="font-size: 12px; padding: 8px 14px; text-decoration: none;">↗ Open in Lindy</a>
         </div>
       </div>
 
       <div class="card" id="lcCard" style="padding: 0; overflow: hidden; position: relative;">
         <iframe id="lcFrame"
                 src="https://chat.lindy.ai/embedded/lindyEmbed/5d975ac1-8426-4242-8818-a27b61853a24"
-                title="Lindy Command Center"
+                title="Command Center"
                 allow="clipboard-read; clipboard-write; microphone; autoplay"
                 referrerpolicy="origin"></iframe>
       </div>
 
       <div style="margin-top: 12px; display: flex; justify-content: space-between; font-size: 11px;" class="mono dim">
-        <div>Embedded via <a href="https://chat.lindy.ai" target="_blank" rel="noopener" style="color: var(--ink-dim);">chat.lindy.ai</a> · skill set + system prompt configured in the Lindy app</div>
-        <div>Tip: ask it to <em>"have jh-outbound-caller call lead #X"</em> to delegate</div>
+        <div>Tip: ask it to <em>"have jh-outbound-caller call lead #X"</em> to delegate to a specialized agent</div>
+        <div>Skill set + system prompt configured externally</div>
       </div>
     </section>
 
@@ -577,7 +576,7 @@
         <div>
           <div class="eyebrow" style="color: var(--accent);">· Inbox</div>
           <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Replies &amp; calls</h1>
-          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Every SMS reply and call leg from your Lindy agents — receptionist, outbound caller, voicemail dropper. Last 7 days.</p>
+          <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Every SMS reply and call leg from your AI agents — receptionist, outbound caller, voicemail dropper. Last 7 days.</p>
         </div>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <div id="inboxTabs" style="display: flex; gap: 0; border: 1px solid var(--hair-strong); border-radius: 2px; overflow: hidden;">
@@ -614,7 +613,7 @@
             <tbody id="inboxBody">
               <tr><td colspan="5" class="empty" style="padding: 40px;">
                 <div class="big">Inbox is quiet.</div>
-                <div>Once Lindy starts answering calls and replies, they'll land here.</div>
+                <div>Once your agents start answering calls and replies, they'll land here.</div>
               </td></tr>
             </tbody>
           </table>
@@ -1505,7 +1504,7 @@ async function dispatchStormBlast(campaignId) {
     });
     const data = await res.json();
     if (data.ok) {
-      alert(`✓ Storm blast dispatched.\nLead count: ${data.lead_count}\nLindy job ID: ${data.job_id}`);
+      alert(`✓ Storm blast dispatched.\nLead count: ${data.lead_count}\nJob ID: ${data.job_id}`);
     } else {
       alert('Failed: ' + (data.error || 'unknown'));
     }
@@ -1544,7 +1543,7 @@ async function dispatchVoicemailBlast(campaignId) {
     });
     const data = await res.json();
     if (data.ok) {
-      alert(`✓ Voicemail blast dispatched to ${data.lead_count} leads.\nLindy job ID: ${data.job_id}`);
+      alert(`✓ Voicemail blast dispatched to ${data.lead_count} leads.\nJob ID: ${data.job_id}`);
     } else {
       alert('Failed: ' + (data.error || 'unknown'));
     }
@@ -1602,9 +1601,9 @@ function renderLeadCard(l) {
           <button class="btn btn-ghost lead-draft-btn" data-lead-id="${l.id}" style="font-size: 11px; padding: 6px 12px; white-space: nowrap;">
             ${hasAnyDraft ? 'Re-draft' : 'Draft with Claude'}
           </button>
-          <div style="display: flex; gap: 4px;" title="Lindy actions">
-            ${phone ? `<button class="lindy-action btn btn-ghost" data-action="call_lead" data-lead-id="${l.id}" title="Have Lindy call this lead now" style="font-size: 10px; padding: 4px 8px;">📞 Call</button>` : ''}
-            <button class="lindy-action btn btn-ghost" data-action="enrich" data-lead-id="${l.id}" title="Run Lindy enrichment (public records + social)" style="font-size: 10px; padding: 4px 8px;">🔎 Enrich</button>
+          <div style="display: flex; gap: 4px;" title="Agent actions">
+            ${phone ? `<button class="lindy-action btn btn-ghost" data-action="call_lead" data-lead-id="${l.id}" title="Have an agent call this lead now" style="font-size: 10px; padding: 4px 8px;">📞 Call</button>` : ''}
+            <button class="lindy-action btn btn-ghost" data-action="enrich" data-lead-id="${l.id}" title="Run enrichment on this lead (public records + social)" style="font-size: 10px; padding: 4px 8px;">🔎 Enrich</button>
           </div>
         </div>
       </div>
