@@ -27,9 +27,6 @@
     "api/admin/drafts/[id]/send-email.js": {
       "maxDuration": 30
     },
-    "api/admin/campaigns/[id]/push-to-ghl.js": {
-      "maxDuration": 60
-    },
     "api/admin/ihm-swaths.js": {
       "maxDuration": 30
     },

@@ -1662,7 +1662,6 @@ function showCampaignDrawer(campaign, leads) {
           <button class="btn" id="launchDripBtn" title="One-click: create Defcon-1 drip on this polygon, Bouncer-scrub all emails, enroll eligible leads. Smartlead campaign auto-creates with all 3 mailboxes attached. First touches go out within 5 min via cron." style="font-size: 13px; padding: 10px 16px; white-space: nowrap; background: var(--accent); color: #0a0b10; font-weight: 600;">🚀 Launch email drip →</button>
           <button class="btn btn-ghost" id="draftSampleBtn" title="Generate drafts for the first 3 leads as a quality preview before launching the drip" style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Draft sample (3)</button>
           <button class="btn btn-ghost" id="voicemailBlastBtn" title="(Phase 2) Send a pre-recorded voicemail to every lead via jh-voicemail-dropper Lindy agent. Requires an audio URL." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">📼 Voicemail blast →</button>
-          <button class="btn btn-ghost" id="pushToGhlBtn" title="Push every lead in this campaign up to GHL as a contact with the jh-new-lead tag. Your GHL workflow picks it up from there." style="font-size: 12px; padding: 8px 14px; white-space: nowrap;">Push to GHL →</button>
           <button class="btn btn-ghost" id="drawerCloseBtn" style="font-size: 12px; padding: 8px 14px;">Close</button>
         </div>
       </div>
@@ -1673,7 +1672,6 @@ function showCampaignDrawer(campaign, leads) {
   document.getElementById('drawerBackdrop').addEventListener('click', () => { drawerHost.innerHTML = ''; });
   document.getElementById('drawerCloseBtn').addEventListener('click', () => { drawerHost.innerHTML = ''; });
   document.getElementById('draftSampleBtn').addEventListener('click', () => draftSample(campaign.id));
-  document.getElementById('pushToGhlBtn').addEventListener('click', () => pushCampaignToGhl(campaign.id));
   document.getElementById('launchDripBtn').addEventListener('click', () => launchEmailDrip(campaign));
   document.getElementById('voicemailBlastBtn').addEventListener('click', () => dispatchVoicemailBlast(campaign.id));
 
@@ -1747,51 +1745,7 @@ function renderDrawerLeads() {
   });
 }
 
-async function pushCampaignToGhl(campaignId) {
-  // Preview first
-  const preview = await fetch(`/api/admin/campaigns/${campaignId}/push-to-ghl`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dryRun: true }),
-  }).then((r) => r.json()).catch(() => null);
-  if (!preview?.ok) {
-    alert('Preview failed: ' + (preview?.error || 'unknown'));
-    return;
-  }
-  if (!preview.pushable) {
-    alert('No leads with email or phone — nothing to push to GHL.');
-    return;
-  }
-  const confirmed = confirm(
-    `Push ${preview.pushable} leads to GHL as contacts?\n\n` +
-    `Tags applied: just-hail, campaign-${campaignId}, jh-new-lead, src-ihm_territory.\n\n` +
-    `Your GHL workflow listening for "jh-new-lead" will take it from there.\n\n` +
-    `${preview.skipped > 0 ? '(' + preview.skipped + ' leads skipped — no email or phone.)' : ''}`
-  );
-  if (!confirmed) return;
-
-  const btn = document.getElementById('pushToGhlBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> Pushing...';
-  try {
-    const res = await fetch(`/api/admin/campaigns/${campaignId}/push-to-ghl`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      alert('Push failed: ' + (data.error || res.status));
-    } else {
-      alert(`✓ Pushed ${data.pushed} / ${data.pushable} to GHL.\n${data.failed} failed, ${data.skipped} skipped.`);
-    }
-  } catch (err) {
-    alert('Error: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = 'Push to GHL →';
-  }
-}
+// (pushCampaignToGhl removed — GHL replaced by our custom drip engine)
 
 // =========================================================
 // CAMPAIGN-LEVEL ACTIONS

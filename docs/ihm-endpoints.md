@@ -55,7 +55,7 @@ Storm webhook (public AgentApi webhook we already subscribe to)
         ↓
 (poll) /Territory/BulkContactList  →  parse HTML, extract leads
         ↓
-Upsert into leads table → campaign.status='ready' → fire GHL outbound
+Upsert into leads table → campaign.status='ready' → enroll in Defcon-1 drip (Hailey)
 ```
 
 Zero human clicks. This is the Phase 3 target.

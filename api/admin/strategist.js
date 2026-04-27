@@ -26,7 +26,7 @@ import { getStormData, getSwathPolygons } from '../../lib/ihm-web.js';
 import { getSpcOutlookSummary, getSpcMultiDayOutlook } from '../../lib/spc.js';
 import { draftForLead } from '../../lib/drafts.js';
 import { sendEmail } from '../../lib/email.js';
-import { upsertContact, addTags, removeTags } from '../../lib/ghl.js';
+// (lib/ghl.js removed — GHL replaced by our custom drip engine)
 
 const client = new Anthropic();
 
@@ -63,8 +63,6 @@ Engagement (write):
 - draft_outreach_for_lead  : generate SMS + email drafts with Claude (saves approved=false). SAFE to call proactively — drafts don't send anything.
 - approve_draft            : flip approved=true on a specific draft. DESTRUCTIVE intent (draft becomes sendable). REQUIRES explicit user confirmation in chat before calling.
 - send_approved_email_draft: actually emails the lead via Resend. MOST DESTRUCTIVE — real email goes out. REQUIRES explicit user confirmation naming the specific draft_id. Never chain approve→send without user saying "send it" in between.
-- push_lead_to_ghl         : upsert a GHL contact for a lead (adds default tags + triggers workflows). Reversible; safe to call when the user asks.
-- tag_ghl_contact          : add or remove tags on a GHL contact. Safe; used to trigger or pause GHL workflows.
 
 Voice + voicemail (only Lindy is wired for these — drip engine is email + SMS only):
 - lindy_call_lead          : LIVE outbound voice call (jh-outbound-caller). REAL CALL. REQUIRES confirm:true AND explicit user instruction.
@@ -291,19 +289,8 @@ const TOOLS = [
       draft_id: { type: 'integer' },
       confirm:  { type: 'boolean', description: 'MUST be true. Gate to prevent accidental send.' },
     }}},
-  { name: 'push_lead_to_ghl',
-    description: "Upsert a single lead as a GoHighLevel contact. Adds default tags (just-hail, campaign-{id}, src-{source} if present) plus any extra_tags. Tag-added events trigger any GHL workflows listening for them — this is how Charlie fires cadences. Reversible (remove the contact in GHL), so safe to call when asked.",
-    input_schema: { type: 'object', required: ['lead_id'], properties: {
-      lead_id:    { type: 'integer' },
-      extra_tags: { type: 'array', items: { type: 'string' }, description: 'Additional tags to attach — e.g. ["jh-strategist-routed", "priority-high"]' },
-    }}},
-  { name: 'tag_ghl_contact',
-    description: "Add or remove tags from an existing GHL contact. Pass remove=true to REMOVE. Tag changes are the primary way to trigger/pause GHL workflows (e.g. add 'pause-cadence' to stop a running sequence).",
-    input_schema: { type: 'object', required: ['ghl_contact_id', 'tags'], properties: {
-      ghl_contact_id: { type: 'string', description: 'The GHL contact id returned from push_lead_to_ghl or lookup.' },
-      tags:           { type: 'array', items: { type: 'string' }, minItems: 1 },
-      remove:         { type: 'boolean', description: 'true to remove these tags; false (default) to add them.' },
-    }}},
+  // (push_lead_to_ghl + tag_ghl_contact removed — GHL replaced by
+  //  our custom drip engine. enroll_polygon_in_drip is the new path.)
 
   // ============================================================
   // Lindy.ai voice + voicemail + research agents (Phase 1 Lindy)
@@ -794,37 +781,7 @@ async function runTool(name, input) {
         }
       }
 
-      case 'push_lead_to_ghl': {
-        const id = parseInt(input.lead_id, 10);
-        if (!id) return { error: 'lead_id required' };
-        const { data: lead } = await supabase.from('leads').select('*').eq('id', id).single();
-        if (!lead) return { error: 'lead not found' };
-        const extraTags = Array.isArray(input.extra_tags) ? input.extra_tags : [];
-        try {
-          const result = await upsertContact(lead, ['jh-new-lead', ...extraTags]);
-          return {
-            ok: true, lead_id: id,
-            ghl_contact_id: result?.contact?.id || null,
-            is_new: !!result?.new,
-            tags_applied: ['just-hail', lead.source ? `src-${lead.source}` : null, lead.campaign_id ? `campaign-${lead.campaign_id}` : null, 'jh-new-lead', ...extraTags].filter(Boolean),
-          };
-        } catch (err) {
-          return { error: `GHL push failed: ${err.message}`, hint: err.status === 401 || err.status === 403 ? 'GHL token missing contacts.write / contacts.readonly scope — enable in GHL Private Integration settings.' : undefined };
-        }
-      }
-
-      case 'tag_ghl_contact': {
-        const cid = String(input.ghl_contact_id || '').trim();
-        if (!cid) return { error: 'ghl_contact_id required' };
-        const tags = Array.isArray(input.tags) ? input.tags.filter(Boolean) : [];
-        if (!tags.length) return { error: 'tags array must have at least one entry' };
-        try {
-          const result = input.remove === true ? await removeTags(cid, tags) : await addTags(cid, tags);
-          return { ok: true, ghl_contact_id: cid, tags, action: input.remove ? 'removed' : 'added', result };
-        } catch (err) {
-          return { error: `GHL tag failed: ${err.message}`, hint: err.status === 401 || err.status === 403 ? 'GHL token missing tags.write scope.' : undefined };
-        }
-      }
+      // (push_lead_to_ghl + tag_ghl_contact removed — GHL replaced by drip engine)
 
       // ============================================================
       // Lindy.ai dispatch tools
