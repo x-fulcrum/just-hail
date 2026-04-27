@@ -151,25 +151,8 @@
   #lindyPanel header .subtitle { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); }
   #lindyPanel header button { background: transparent; border: none; color: var(--ink-dim); cursor: pointer; font-size: 22px; line-height: 1; padding: 4px 8px; border-radius: 2px; }
   #lindyPanel header button:hover { color: var(--ink); background: var(--surface); }
-  #lindyBody { flex: 1; overflow-y: auto; padding: 18px; scroll-behavior: smooth; }
-  #lindyBody::-webkit-scrollbar { width: 6px; }
-  #lindyBody::-webkit-scrollbar-thumb { background: var(--hair-strong); border-radius: 3px; }
-  .lindy-msg { margin-bottom: 14px; font-size: 13px; line-height: 1.55; }
-  .lindy-msg.user { display: flex; justify-content: flex-end; }
-  .lindy-msg.user .bubble { max-width: 82%; padding: 10px 14px; background: var(--green); color: #0a0b10; border-radius: 12px 12px 2px 12px; font-weight: 500; }
-  .lindy-msg.assistant .bubble { padding: 10px 14px; background: var(--surface-2); border: 1px solid var(--hair); border-radius: 12px 12px 12px 2px; color: var(--ink); white-space: pre-wrap; word-wrap: break-word; }
-  .lindy-msg.pending .bubble { padding: 10px 14px; background: var(--surface-2); border: 1px dashed var(--hair-strong); border-radius: 12px 12px 12px 2px; color: var(--ink-dim); font-style: italic; font-size: 12px; }
-  .lindy-msg .meta { font-family: var(--font-mono); font-size: 10px; color: var(--ink-dim); margin-top: 4px; padding: 0 4px; letter-spacing: 0.06em; }
-  #lindyWelcome { padding: 4px 2px; }
-  #lindyWelcome h3 { font-family: var(--font-display); font-size: 22px; margin: 0 0 6px; font-weight: 400; letter-spacing: -0.01em; }
-  #lindyWelcome p { margin: 0 0 14px; color: var(--ink-dim); font-size: 12px; line-height: 1.5; }
-  .lindy-starter { display: block; width: 100%; text-align: left; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); border: 1px solid var(--hair); border-radius: 2px; color: var(--ink); cursor: pointer; font-size: 12px; font-family: var(--font-ui); transition: border-color 140ms; }
-  .lindy-starter:hover { border-color: var(--green); }
-  #lindyForm { padding: 12px 14px; border-top: 1px solid var(--hair); display: flex; gap: 8px; align-items: flex-end; background: var(--surface-2); }
-  #lindyInput { flex: 1; resize: none; background: var(--surface); color: var(--ink); border: 1px solid var(--hair-strong); border-radius: 2px; padding: 10px 12px; font-family: var(--font-ui); font-size: 13px; min-height: 38px; max-height: 140px; line-height: 1.4; }
-  #lindyInput:focus { outline: none; border-color: var(--green); }
-  #lindySend { padding: 10px 16px; background: var(--green); color: #0a0b10; border: none; border-radius: 2px; font-weight: 500; cursor: pointer; font-size: 13px; }
-  #lindySend:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* Lindy iframe — flex container fills the panel */
+  #lindyFrame { flex: 1 1 auto; border: none; width: 100%; min-height: 0; background: var(--surface); }
 
   /* ============================================================
      FORECAST MAP FULLSCREEN MODE
@@ -715,34 +698,26 @@
     </form>
   </div>
 
-  <!-- ================ LINDY ASSISTANT BRIDGE WIDGET ================ -->
-  <button id="lindyToggle" type="button" title="Talk to your Lindy bridge agent — same agent that texts you the morning brief">
+  <!-- ================ LINDY EMBED WIDGET ================ -->
+  <!-- Native Lindy chat iframe — full power of whichever agent's URL is below -->
+  <button id="lindyToggle" type="button" title="Talk to your Lindy agent — full chat UI with all tools">
     <span class="dot"></span> 💬 Lindy
   </button>
   <div id="lindyPanel" style="display: none;">
     <header>
       <div style="flex: 1;">
-        <div class="title">Lindy Assistant</div>
-        <div class="subtitle">· bridge agent · 500+ tools</div>
+        <div class="title">Lindy</div>
+        <div class="subtitle">· native embed · all skills</div>
       </div>
-      <button id="lindyClearBtn" type="button" title="Start a new thread">↺</button>
+      <button id="lindyExpandBtn" type="button" title="Expand">⛶</button>
       <button id="lindyCloseBtn" type="button" title="Close">×</button>
     </header>
-    <div id="lindyBody">
-      <div id="lindyWelcome">
-        <h3>What can Lindy do for you?</h3>
-        <p>This is the same Lindy that SMSes you in the morning. Anything you'd ask it via iMessage, you can ask here. Replies land async (usually 5-30 sec).</p>
-        <button class="lindy-starter" data-q="Send Charlie a heads-up SMS that the new admin chat works.">Test SMS to Charlie</button>
-        <button class="lindy-starter" data-q="Look up the latest hail news in Central Texas in the last 7 days and summarize.">Research recent Central TX hail</button>
-        <button class="lindy-starter" data-q="Draft an email to me with a 3-bullet rundown of what hit my inbox today.">Inbox triage email</button>
-        <button class="lindy-starter" data-q="Set a reminder for me at 5pm today to check on hot leads.">Set a 5pm reminder</button>
-      </div>
-      <div id="lindyMessages"></div>
-    </div>
-    <form id="lindyForm">
-      <textarea id="lindyInput" rows="1" placeholder="Tell Lindy what to do…" autocomplete="off"></textarea>
-      <button type="submit" id="lindySend">Send</button>
-    </form>
+    <iframe id="lindyFrame"
+            src="https://chat.lindy.ai/embedded/lindyEmbed/5d975ac1-8426-4242-8818-a27b61853a24"
+            title="Lindy Embed"
+            style="flex: 1; border: none; width: 100%; min-height: 0; background: var(--surface);"
+            allow="clipboard-read; clipboard-write; microphone"
+            referrerpolicy="origin"></iframe>
   </div>
 </div>
 
@@ -3510,219 +3485,48 @@ function fmtSpc(iso) {
 })();
 
 // =========================================================
-// LINDY ASSISTANT BRIDGE WIDGET
+// LINDY EMBED WIDGET (iframe)
 // =========================================================
-// Mirrors the Strategist widget but talks to the bridge Lindy agent
-// instead of Claude. Replies are async — we POST to /api/admin/assistant
-// (which dispatches to Lindy) and then poll the same endpoint to pick
-// up the agent's callback. Keeps thread state via a sessionStorage
-// thread_id so a refresh doesn't blow away the conversation.
+// Native Lindy chat panel. Just an iframe pointed at the embed URL.
+// The agent on the other side has whatever skills/tools we've enabled
+// in the Lindy app — Twilio, Gmail, Calendar, Web Search, etc.
+// All chat state, history, and routing live inside Lindy.
 // =========================================================
-(function initLindyBridge() {
-  const toggle   = document.getElementById('lindyToggle');
-  const panel    = document.getElementById('lindyPanel');
-  const closeBtn = document.getElementById('lindyCloseBtn');
-  const clearBtn = document.getElementById('lindyClearBtn');
-  const body     = document.getElementById('lindyBody');
-  const welcome  = document.getElementById('lindyWelcome');
-  const messages = document.getElementById('lindyMessages');
-  const form     = document.getElementById('lindyForm');
-  const input    = document.getElementById('lindyInput');
-  const sendBtn  = document.getElementById('lindySend');
-  if (!toggle || !panel) {
-    console.warn('[Lindy] bridge widget DOM not found');
-    return;
-  }
+(function initLindyEmbed() {
+  const toggle    = document.getElementById('lindyToggle');
+  const panel     = document.getElementById('lindyPanel');
+  const closeBtn  = document.getElementById('lindyCloseBtn');
+  const expandBtn = document.getElementById('lindyExpandBtn');
+  if (!toggle || !panel) return;
   toggle.style.display = 'flex';
 
-  const OPEN_KEY   = 'jh-lindy-open';
-  const THREAD_KEY = 'jh-lindy-thread';
-  let threadId = sessionStorage.getItem(THREAD_KEY) || null;
-  let pollTimer = null;
-  let pendingJobs = new Set(); // job_ids we're waiting on a callback for
+  const OPEN_KEY = 'jh-lindy-open';
+  const SIZE_KEY = 'jh-lindy-expanded';
 
+  function applySize() {
+    const expanded = sessionStorage.getItem(SIZE_KEY) === '1';
+    panel.style.width  = expanded ? 'min(900px, calc(100vw - 48px))' : '420px';
+    panel.style.height = expanded ? 'calc(100vh - 48px)' : '600px';
+  }
   function openPanel() {
     panel.style.display = 'flex';
     toggle.style.display = 'none';
     sessionStorage.setItem(OPEN_KEY, '1');
-    setTimeout(() => { input.focus(); body.scrollTop = body.scrollHeight; }, 60);
-    if (threadId) loadThread(threadId);
-    startPolling();
+    applySize();
   }
   function closePanel() {
     panel.style.display = 'none';
     toggle.style.display = 'flex';
     sessionStorage.removeItem(OPEN_KEY);
-    stopPolling();
   }
   toggle.addEventListener('click', openPanel);
   closeBtn.addEventListener('click', closePanel);
+  expandBtn.addEventListener('click', () => {
+    const cur = sessionStorage.getItem(SIZE_KEY) === '1';
+    sessionStorage.setItem(SIZE_KEY, cur ? '0' : '1');
+    applySize();
+  });
   if (sessionStorage.getItem(OPEN_KEY) === '1') openPanel();
-
-  clearBtn.addEventListener('click', () => {
-    if (!confirm('Start a new thread? Old messages stay in the DB but disappear from chat.')) return;
-    threadId = null;
-    sessionStorage.removeItem(THREAD_KEY);
-    messages.innerHTML = '';
-    welcome.style.display = 'block';
-    pendingJobs.clear();
-  });
-
-  welcome.querySelectorAll('.lindy-starter').forEach((b) => {
-    b.addEventListener('click', () => {
-      input.value = b.dataset.q || b.textContent;
-      autogrow();
-      send();
-    });
-  });
-
-  function autogrow() {
-    input.style.height = 'auto';
-    input.style.height = Math.min(140, input.scrollHeight) + 'px';
-  }
-  input.addEventListener('input', autogrow);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  });
-  form.addEventListener('submit', (e) => { e.preventDefault(); send(); });
-
-  function escHtml(s) {
-    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-  }
-  function fmtTime(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
-
-  function addUserMessage(text, ts) {
-    welcome.style.display = 'none';
-    const div = document.createElement('div');
-    div.className = 'lindy-msg user';
-    div.innerHTML = `<div><div class="bubble">${escHtml(text)}</div><div class="meta" style="text-align: right;">${fmtTime(ts || new Date().toISOString())}</div></div>`;
-    messages.appendChild(div);
-    body.scrollTop = body.scrollHeight;
-  }
-  function addPendingMessage(jobId) {
-    const div = document.createElement('div');
-    div.className = 'lindy-msg pending';
-    div.dataset.jobId = jobId;
-    div.innerHTML = `<div class="bubble"><span class="spin"></span> Lindy is working on it…</div>`;
-    messages.appendChild(div);
-    body.scrollTop = body.scrollHeight;
-  }
-  function addAssistantMessage(text, jobId, ts) {
-    welcome.style.display = 'none';
-    // Replace pending placeholder if it exists.
-    const pending = messages.querySelector(`.lindy-msg.pending[data-job-id="${jobId}"]`);
-    const div = document.createElement('div');
-    div.className = 'lindy-msg assistant';
-    div.dataset.jobId = jobId;
-    div.innerHTML = `<div><div class="bubble">${escHtml(text || '(no response)')}</div><div class="meta">Lindy · ${fmtTime(ts || new Date().toISOString())}</div></div>`;
-    if (pending) pending.replaceWith(div);
-    else messages.appendChild(div);
-    body.scrollTop = body.scrollHeight;
-  }
-  function markFailed(jobId, errorText) {
-    const pending = messages.querySelector(`.lindy-msg.pending[data-job-id="${jobId}"]`);
-    const div = document.createElement('div');
-    div.className = 'lindy-msg assistant';
-    div.dataset.jobId = jobId;
-    div.innerHTML = `<div><div class="bubble" style="border-color: var(--accent); color: var(--accent);">⚠ ${escHtml(errorText || 'Lindy reported an error')}</div><div class="meta">Failed</div></div>`;
-    if (pending) pending.replaceWith(div);
-    else messages.appendChild(div);
-  }
-
-  async function send() {
-    const task = input.value.trim();
-    if (!task) return;
-    input.value = '';
-    autogrow();
-    sendBtn.disabled = true;
-
-    addUserMessage(task);
-
-    try {
-      const r = await fetch('/api/admin/assistant', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ task, thread_id: threadId }),
-      });
-      const j = await r.json();
-      if (!j.ok) {
-        markFailed(0, j.error || 'dispatch failed');
-        return;
-      }
-      if (!threadId) {
-        threadId = j.thread_id;
-        sessionStorage.setItem(THREAD_KEY, threadId);
-      }
-      pendingJobs.add(j.lindy_job_id);
-      addPendingMessage(j.lindy_job_id);
-      startPolling(); // make sure poll is running
-    } catch (err) {
-      markFailed(0, err.message);
-    } finally {
-      sendBtn.disabled = false;
-    }
-  }
-
-  async function loadThread(tid) {
-    try {
-      const r = await fetch(`/api/admin/assistant?thread_id=${encodeURIComponent(tid)}&limit=80`);
-      const j = await r.json();
-      if (!j.ok) return;
-      messages.innerHTML = '';
-      pendingJobs.clear();
-      for (const m of j.messages || []) {
-        addUserMessage(m.user, m.ts);
-        if (m.assistant) {
-          addAssistantMessage(m.assistant, m.job_id, m.replied_at);
-        } else if (m.status === 'failed') {
-          markFailed(m.job_id, 'Lindy returned an error');
-        } else {
-          addPendingMessage(m.job_id);
-          pendingJobs.add(m.job_id);
-        }
-      }
-    } catch (e) {
-      console.warn('[Lindy] thread load failed:', e);
-    }
-  }
-
-  async function pollOnce() {
-    if (!threadId || !pendingJobs.size) return;
-    try {
-      const r = await fetch(`/api/admin/assistant?thread_id=${encodeURIComponent(threadId)}&limit=80`);
-      const j = await r.json();
-      if (!j.ok) return;
-      for (const m of j.messages || []) {
-        if (pendingJobs.has(m.job_id)) {
-          if (m.assistant) {
-            addAssistantMessage(m.assistant, m.job_id, m.replied_at);
-            pendingJobs.delete(m.job_id);
-          } else if (m.status === 'failed') {
-            markFailed(m.job_id, 'Lindy returned an error');
-            pendingJobs.delete(m.job_id);
-          }
-        }
-      }
-      if (!pendingJobs.size) stopPolling();
-    } catch (e) {
-      console.warn('[Lindy] poll failed:', e);
-    }
-  }
-  function startPolling() {
-    if (pollTimer) return;
-    pollTimer = setInterval(pollOnce, 3000);
-    pollOnce();
-  }
-  function stopPolling() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  }
 })();
 </script>
 </body>
