@@ -470,7 +470,7 @@
       <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 24px; gap: 24px; flex-wrap: wrap;">
         <div>
           <div class="eyebrow" style="color: var(--accent);">· Hail Forecast</div>
-          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Where is it coming?</h1>
+          <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Hail Prediction Outlook</h1>
           <p class="dim" style="margin: 10px 0 0; font-size: 14px;">NOAA Storm Prediction Center convective outlooks. Day 1 = today, Day 8 = a week out. Updated several times per day by SPC forecasters in Norman, OK.</p>
         </div>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -2674,18 +2674,85 @@ async function renderAllPolygonsMapbox(campaigns, host, PALETTE, showLabels) {
     if (swathHandle) swathHandle.setOpacity(pct / 100);
   });
 
-  // ── Rain radar toggle ──
+  // ── Rain radar toggle + animated playback ──
   const rainToggle = document.getElementById('mapShowRain');
   let rainHandle = null;
+  let rainControlsEl = null;
+
   rainToggle?.addEventListener('change', async () => {
     if (rainToggle.checked) {
-      rainHandle = await window.JHMap.addRainRadar(map, { opacity: 0.7 });
-      swathStatus('Live rain radar on (refreshes every 5 min).', 'info');
+      rainHandle = await window.JHMap.addRainRadar(map, { opacity: 0.7, autoplay: true });
+      // Render the playback controls (play/pause + scrubber + timestamp)
+      mountRainControls(host, rainHandle);
+      // Coach the user when they're zoomed too far out to see rain
+      const updateZoomHint = () => {
+        const z = map.getZoom();
+        const hint = z < 6
+          ? `🌧 Live rain radar on — zoom in to see it (currently z=${z.toFixed(1)}, radar shows at z≥6)`
+          : `🌧 Live rain radar · ${rainHandle.getPastCount()} past frames + ${rainHandle.getFrameCount() - rainHandle.getPastCount()} forecast · animated`;
+        swathStatus(hint, 'info');
+      };
+      updateZoomHint();
+      map.on('zoomend', updateZoomHint);
+      rainHandle._zoomHint = updateZoomHint;
     } else if (rainHandle) {
+      if (rainHandle._zoomHint) map.off('zoomend', rainHandle._zoomHint);
       rainHandle.remove();
       rainHandle = null;
+      if (rainControlsEl) { rainControlsEl.remove(); rainControlsEl = null; }
     }
   });
+
+  // Floating playback controls overlay — sits at the bottom of the map.
+  // Shows ◀◀ • play/pause • ▶▶ • frame timestamp • timeline scrubber.
+  function mountRainControls(hostEl, handle) {
+    if (rainControlsEl) rainControlsEl.remove();
+    rainControlsEl = document.createElement('div');
+    rainControlsEl.style.cssText = `
+      position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%);
+      display: flex; gap: 8px; align-items: center;
+      background: rgba(10,11,16,0.85); backdrop-filter: blur(8px);
+      padding: 8px 12px; border: 1px solid var(--hair-strong); border-radius: 4px;
+      font-family: var(--font-mono); font-size: 11px; color: var(--ink);
+      z-index: 10; min-width: 360px;
+    `;
+    rainControlsEl.innerHTML = `
+      <button id="rainStepBack"  style="background: transparent; border: 1px solid var(--hair-strong); color: var(--ink); padding: 3px 8px; cursor: pointer; border-radius: 2px;" title="Previous frame">◀</button>
+      <button id="rainPlayPause" style="background: var(--accent); border: 1px solid var(--accent); color: #0a0b10; padding: 3px 10px; cursor: pointer; border-radius: 2px; font-weight: 600; min-width: 36px;" title="Play/pause">⏸</button>
+      <button id="rainStepFwd"   style="background: transparent; border: 1px solid var(--hair-strong); color: var(--ink); padding: 3px 8px; cursor: pointer; border-radius: 2px;" title="Next frame">▶</button>
+      <button id="rainGoLatest"  style="background: transparent; border: 1px solid var(--hair-strong); color: var(--ink); padding: 3px 8px; cursor: pointer; border-radius: 2px;" title="Jump to latest frame">⏭ now</button>
+      <input id="rainScrub" type="range" min="0" max="0" value="0" step="1" style="flex: 1; accent-color: var(--accent); height: 4px; cursor: pointer;" />
+      <span id="rainTime" class="dim" style="min-width: 90px; text-align: right; font-variant-numeric: tabular-nums;">—</span>
+    `;
+    hostEl.appendChild(rainControlsEl);
+
+    const playBtn  = rainControlsEl.querySelector('#rainPlayPause');
+    const stepBack = rainControlsEl.querySelector('#rainStepBack');
+    const stepFwd  = rainControlsEl.querySelector('#rainStepFwd');
+    const latestBtn= rainControlsEl.querySelector('#rainGoLatest');
+    const scrub    = rainControlsEl.querySelector('#rainScrub');
+    const timeEl   = rainControlsEl.querySelector('#rainTime');
+
+    playBtn.addEventListener('click', () => {
+      if (handle.isPlaying()) { handle.pause(); playBtn.textContent = '▶'; }
+      else { handle.play(); playBtn.textContent = '⏸'; }
+    });
+    stepBack.addEventListener('click', () => { handle.step(-1); playBtn.textContent = '▶'; });
+    stepFwd.addEventListener('click',  () => { handle.step(+1); playBtn.textContent = '▶'; });
+    latestBtn.addEventListener('click',() => { handle.goLatest(); playBtn.textContent = '▶'; });
+    scrub.addEventListener('input', (e) => { handle.goto(parseInt(e.target.value, 10)); playBtn.textContent = '▶'; });
+
+    handle.onFrameChange(({ index, total, time, isNewest }) => {
+      scrub.max = String(total - 1);
+      scrub.value = String(index);
+      const minsAgo = Math.round((Date.now() / 1000 - time) / 60);
+      const label = isNewest ? 'now' :
+                    minsAgo > 0 ? `${minsAgo} min ago` :
+                    minsAgo < 0 ? `+${-minsAgo} min` :
+                    'now';
+      timeEl.textContent = label;
+    });
+  }
 
   // ── 3D toggle (just hides building extrusion + flattens pitch) ──
   const threeDToggle = document.getElementById('mapShow3D');

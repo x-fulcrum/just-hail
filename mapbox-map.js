@@ -438,84 +438,179 @@
 
   // ──────────────────────────────────────────────────────────────
   // Live rain radar overlay via RainViewer (free, no auth).
-  // We pull the latest frame manifest, then add the most recent radar
-  // tileset as a raster source. Auto-refreshes every 5 min.
+  //
+  // Important quirks of the free tier we work around:
+  //   - At zoom < 6, RainViewer serves an OPAQUE "Zoom Level Not
+  //     Supported" placeholder PNG over tiles outside active rain
+  //     (instead of a transparent pixel). Looks ugly. Fix: set
+  //     minzoom: 6 on the source so we never request those tiles.
+  //   - There are 13 frames going back ~2 hours in radar.past[].
+  //     Cycling through them animates the storm motion. Each frame
+  //     is a separate Mapbox source (loaded lazily) — we toggle
+  //     visibility on a timer for smooth playback.
+  //
+  // Public API: returned controller has play(), pause(), step(±1),
+  // setOpacity(), refresh(), remove(), and exposes the current
+  // frame timestamp via getCurrentFrame() so the UI can show "16 min ago".
   // ──────────────────────────────────────────────────────────────
   const RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
+  const RAIN_MINZOOM = 6;          // below this, RainViewer serves opaque placeholders
+  const FRAME_INTERVAL_MS = 600;   // ~600ms per frame = realistic storm pacing
 
   NS.addRainRadar = async function addRainRadar(map, opts = {}) {
-    const sourceId = opts.sourceId || 'jh-rain-radar';
-    const layerId = `${sourceId}-layer`;
-    let timer = null;
+    const baseId = opts.sourceId || 'jh-rain';
+    const opacity = opts.opacity != null ? opts.opacity : 0.7;
+    let manifest = null;
+    let frames = [];               // [{ time, path, sourceId, layerId, loaded }]
+    let currentIdx = -1;
+    let playTimer = null;
+    let refreshTimer = null;
+    const onFrameCbs = [];
 
-    async function refresh() {
-      let manifest;
+    async function fetchManifest() {
       try {
         const res = await fetch(RAINVIEWER_API, { cache: 'no-store' });
-        manifest = await res.json();
+        return await res.json();
       } catch (err) {
-        console.warn('[JHMap] rainviewer fetch failed:', err.message);
-        return;
+        console.warn('[JHMap] rainviewer manifest fetch failed:', err.message);
+        return null;
       }
-      // Use the most-recent past frame (most current = last in `radar.past`)
-      const frames = manifest?.radar?.past || [];
-      if (!frames.length) return;
-      const latest = frames[frames.length - 1];
-      const host = manifest.host;
-      // Color scheme 2 = Universal Blue→Red, smoothed=1, snow=1
-      const tileTpl = `${host}${latest.path}/256/{z}/{x}/{y}/2/1_1.png`;
+    }
 
-      if (map.getSource(sourceId)) {
-        // Mapbox doesn't allow swapping a raster source's tiles in place;
-        // remove & re-add cleanly.
-        if (map.getLayer(layerId)) map.removeLayer(layerId);
-        map.removeSource(sourceId);
-      }
-      map.addSource(sourceId, {
-        type: 'raster',
-        tiles: [tileTpl],
-        tileSize: 256,
-        attribution: 'Radar © <a href="https://rainviewer.com">RainViewer</a>',
-      });
-
-      // Insert ABOVE the basemap but BELOW labels & 3D buildings so the
-      // rain doesn't paint over street names or building extrusions.
+    function findBeforeLayer() {
       const layers = map.getStyle().layers || [];
-      const beforeId =
+      return (
         layers.find((l) => l.id === 'jh-3d-buildings')?.id ||
-        layers.find((l) => l.type === 'symbol' && l.layout?.['text-field'])?.id;
+        layers.find((l) => l.type === 'symbol' && l.layout?.['text-field'])?.id
+      );
+    }
 
-      map.addLayer({
-        id: layerId,
-        type: 'raster',
-        source: sourceId,
-        paint: {
-          'raster-opacity': opts.opacity != null ? opts.opacity : 0.7,
-          'raster-fade-duration': 0,
-        },
-      }, beforeId);
+    function ensureFrameSource(frame) {
+      if (frame.loaded) return;
+      const tileTpl = `${manifest.host}${frame.path}/256/{z}/{x}/{y}/${opts.colorScheme ?? 2}/${opts.smooth ?? 1}_${opts.snow ?? 1}.png`;
+      if (!map.getSource(frame.sourceId)) {
+        map.addSource(frame.sourceId, {
+          type: 'raster',
+          tiles: [tileTpl],
+          tileSize: 256,
+          minzoom: RAIN_MINZOOM,
+          attribution: 'Radar © <a href="https://rainviewer.com">RainViewer</a>',
+        });
+      }
+      if (!map.getLayer(frame.layerId)) {
+        map.addLayer({
+          id: frame.layerId,
+          type: 'raster',
+          source: frame.sourceId,
+          minzoom: RAIN_MINZOOM,
+          layout: { visibility: 'none' },
+          paint: {
+            'raster-opacity': opacity,
+            'raster-fade-duration': 100,   // brief crossfade between frames
+          },
+        }, findBeforeLayer());
+      }
+      frame.loaded = true;
+    }
+
+    function showFrame(idx) {
+      if (!frames.length) return;
+      const wrap = ((idx % frames.length) + frames.length) % frames.length;
+      const target = frames[wrap];
+      ensureFrameSource(target);
+      // Hide all other frames
+      for (const f of frames) {
+        if (f === target) continue;
+        if (map.getLayer(f.layerId)) {
+          map.setLayoutProperty(f.layerId, 'visibility', 'none');
+        }
+      }
+      map.setLayoutProperty(target.layerId, 'visibility', 'visible');
+      currentIdx = wrap;
+      for (const cb of onFrameCbs) {
+        try { cb({ index: wrap, total: frames.length, time: target.time, isNewest: wrap === frames.length - 1 }); } catch {}
+      }
+    }
+
+    async function rebuild(showLatest = true) {
+      manifest = await fetchManifest();
+      if (!manifest?.radar?.past?.length) return;
+
+      // Cull old layers/sources from a previous manifest version
+      for (const f of frames) {
+        if (map.getLayer(f.layerId)) map.removeLayer(f.layerId);
+        if (map.getSource(f.sourceId)) map.removeSource(f.sourceId);
+      }
+
+      const past = manifest.radar.past || [];
+      const nowcast = manifest.radar.nowcast || [];
+      const all = [...past, ...nowcast];
+      frames = all.map((f, i) => ({
+        time: f.time,
+        path: f.path,
+        sourceId: `${baseId}-src-${i}`,
+        layerId: `${baseId}-lyr-${i}`,
+        loaded: false,
+        isForecast: i >= past.length,
+      }));
+
+      // Pre-load the layer for the latest frame so first paint is instant
+      if (showLatest && frames.length) {
+        const latestIdx = past.length - 1;   // last past frame = "now"
+        ensureFrameSource(frames[latestIdx]);
+        showFrame(latestIdx);
+      }
+    }
+
+    function play() {
+      if (playTimer) return;
+      playTimer = setInterval(() => {
+        showFrame(currentIdx + 1);
+      }, opts.frameMs || FRAME_INTERVAL_MS);
+    }
+    function pause() {
+      if (playTimer) { clearInterval(playTimer); playTimer = null; }
     }
 
     const apply = async () => {
-      await refresh();
+      await rebuild(true);
+      if (opts.autoplay) play();
       if (opts.autoRefreshMs !== 0) {
-        timer = setInterval(refresh, opts.autoRefreshMs || 5 * 60 * 1000);
+        refreshTimer = setInterval(() => rebuild(false), opts.autoRefreshMs || 5 * 60 * 1000);
       }
     };
     if (map.isStyleLoaded()) apply();
     else map.once('load', apply);
 
     return {
-      sourceId,
-      layerId,
-      refresh,
-      setOpacity: (v) => {
-        if (map.getLayer(layerId)) map.setPaintProperty(layerId, 'raster-opacity', v);
-      },
+      // Lifecycle
       remove: () => {
-        if (timer) clearInterval(timer);
-        if (map.getLayer(layerId)) map.removeLayer(layerId);
-        if (map.getSource(sourceId)) map.removeSource(sourceId);
+        pause();
+        if (refreshTimer) clearInterval(refreshTimer);
+        for (const f of frames) {
+          if (map.getLayer(f.layerId)) map.removeLayer(f.layerId);
+          if (map.getSource(f.sourceId)) map.removeSource(f.sourceId);
+        }
+        frames = [];
+      },
+      refresh: () => rebuild(true),
+      // Playback
+      play,
+      pause,
+      isPlaying: () => playTimer != null,
+      step: (delta = 1) => { pause(); showFrame(currentIdx + delta); },
+      goto: (idx) => { pause(); showFrame(idx); },
+      goLatest: () => { pause(); showFrame(frames.findIndex((f) => f.isForecast) - 1 + (frames.some((f) => f.isForecast) ? 0 : frames.length)); },
+      // Inspection
+      getFrameCount: () => frames.length,
+      getPastCount: () => frames.filter((f) => !f.isForecast).length,
+      getCurrentFrame: () => (currentIdx >= 0 ? frames[currentIdx] : null),
+      onFrameChange: (cb) => { onFrameCbs.push(cb); },
+      // Visual
+      setOpacity: (v) => {
+        for (const f of frames) {
+          if (map.getLayer(f.layerId)) map.setPaintProperty(f.layerId, 'raster-opacity', v);
+        }
       },
     };
   };
