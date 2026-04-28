@@ -8,9 +8,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!-- Leaflet: satellite polygon preview in campaign drawer -->
+<!-- Leaflet still loaded as a graceful fallback when Mapbox token is missing -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<!-- Mapbox helpers — wraps Mapbox GL JS v3 + Standard style + 3D terrain
+     + 3D buildings + atmosphere + RainViewer radar overlay + IHM swath
+     GeoJSON. Token loaded from /api/admin/config in the bootstrap below. -->
+<script src="/mapbox-map.js"></script>
 <style>
   :root {
     --bg: #0a0b10;
@@ -762,6 +766,23 @@ const ENDPOINT = 'https://script.google.com/macros/s/AKfycbzi_4_ZaBRafJ5bZpxavtN
 const ADMIN_KEY = 'jh-leander-2026';
 const SESSION_KEY = 'jh-admin-auth';
 const CMD_POLL_MS = 15000;
+
+// Bootstrap Mapbox: fetch the public token from /api/admin/config and
+// initialize the helper module. Falls back silently to Leaflet if the
+// token is missing (e.g., env var not set in dev). Maps that need it
+// await `window.JH_MAPBOX_READY` before rendering.
+window.JH_MAPBOX_READY = (async () => {
+  try {
+    const r = await fetch('/api/admin/config').then((r) => r.json());
+    if (r?.mapbox_token && window.JHMap) {
+      await window.JHMap.init({ token: r.mapbox_token });
+      return true;
+    }
+  } catch (err) {
+    console.warn('[admin] mapbox bootstrap failed:', err.message);
+  }
+  return false;
+})();
 
 // =========================================================
 // STORM COMMAND CENTER — polls /api/admin/storms every 15s
@@ -1789,42 +1810,59 @@ function showCampaignDrawer(campaign, leads) {
   renderDrawerLeads();
 }
 
-// Render a Leaflet satellite map with the polygon overlay in the drawer.
-// Runs defensively — if Leaflet isn't loaded yet, retries briefly.
-function renderDrawerMap(polygon, retries = 0) {
-  if (typeof window.L === 'undefined') {
-    if (retries >= 40) return;        // give up after ~4s
-    return setTimeout(() => renderDrawerMap(polygon, retries + 1), 100);
-  }
+// Render the campaign-drawer polygon preview. Tries Mapbox first
+// (3D buildings + terrain + satellite + atmosphere); falls back to
+// Leaflet if Mapbox isn't available (e.g., dev with no token).
+async function renderDrawerMap(polygon, retries = 0) {
   const host = document.getElementById('drawerMap');
   if (!host) return;
   host.innerHTML = '';
+
+  // Compute polygon centroid + initial camera
+  const lats = polygon.map((p) => p.lat);
+  const lngs = polygon.map((p) => p.lng);
+  const center = [
+    (Math.min(...lngs) + Math.max(...lngs)) / 2,
+    (Math.min(...lats) + Math.max(...lats)) / 2,
+  ];
+
+  const useMapbox = await window.JH_MAPBOX_READY;
+  if (useMapbox && window.JHMap) {
+    try {
+      const map = await window.JHMap.create(host, {
+        center,
+        zoom: 14,
+        pitch: 60,
+        bearing: -15,
+        terrain: true,
+        buildings: true,
+        scrollZoom: false,
+        lightPreset: 'day',
+      });
+      window.JHMap.addPolygon(map, polygon, {
+        id: 'drawer-polygon',
+        color: '#e94f37',
+        fillOpacity: 0.18,
+        lineWidth: 3,
+        extrude: false,
+      });
+      window.JHMap.fitBounds(map, [polygon], { padding: 50 });
+      return;
+    } catch (err) {
+      console.warn('[admin] Mapbox drawer render failed, falling back:', err.message);
+    }
+  }
+
+  // ── Leaflet fallback ──
+  if (typeof window.L === 'undefined') {
+    if (retries >= 40) return;
+    return setTimeout(() => renderDrawerMap(polygon, retries + 1), 100);
+  }
   const latlngs = polygon.map((p) => [p.lat, p.lng]);
-
-  const map = window.L.map(host, {
-    zoomControl: true,
-    attributionControl: false,
-    scrollWheelZoom: false,
-  });
-
-  // Esri World Imagery — free satellite tiles, no API key.
-  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
-  }).addTo(map);
-
-  // Optional: thin reference labels overlay so you can see street names.
-  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
-    opacity: 0.6,
-  }).addTo(map);
-
-  const poly = window.L.polygon(latlngs, {
-    color: '#e94f37',
-    weight: 2.5,
-    fillColor: '#e94f37',
-    fillOpacity: 0.15,
-  }).addTo(map);
-
+  const map = window.L.map(host, { zoomControl: true, attributionControl: false, scrollWheelZoom: false });
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
+  window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.6 }).addTo(map);
+  const poly = window.L.polygon(latlngs, { color: '#e94f37', weight: 2.5, fillColor: '#e94f37', fillOpacity: 0.15 }).addTo(map);
   map.fitBounds(poly.getBounds(), { padding: [20, 20] });
 }
 
@@ -2322,6 +2360,20 @@ async function showCampaignsMapView() {
             <input id="mapShowSwaths" type="checkbox" style="width: auto; height: auto;" />
             <span>Hail swaths</span>
           </label>
+          <label class="mono" style="font-size: 11px; cursor: pointer; display: flex; gap: 6px; align-items: center; color: var(--ink);" title="Live NEXRAD radar via RainViewer — refreshes every 5 min">
+            <input id="mapShowRain" type="checkbox" style="width: auto; height: auto;" />
+            <span>🌧 Live rain</span>
+          </label>
+          <label class="mono" style="font-size: 11px; cursor: pointer; display: flex; gap: 6px; align-items: center; color: var(--ink);" title="3D buildings + terrain shading">
+            <input id="mapShow3D" type="checkbox" checked style="width: auto; height: auto;" />
+            <span>3D</span>
+          </label>
+          <select id="mapLightPreset" class="mono" style="font-size: 11px; padding: 4px 8px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--hair-strong);" title="Mapbox time-of-day lighting">
+            <option value="day" selected>☀ Day</option>
+            <option value="dawn">🌅 Dawn</option>
+            <option value="dusk">🌆 Dusk</option>
+            <option value="night">🌙 Night</option>
+          </select>
           <label id="mapSwathOpacityWrap" class="mono" style="display: none; font-size: 10px; color: var(--ink-dim); align-items: center; gap: 6px; letter-spacing: 0.08em; text-transform: uppercase;">
             Opacity
             <input id="mapSwathOpacity" type="range" min="5" max="85" value="35" step="5" style="width: 90px; height: 4px; accent-color: var(--accent); cursor: pointer;" />
@@ -2376,23 +2428,30 @@ async function showCampaignsMapView() {
   renderAllPolygonsMap(withPoly);
 }
 
-function renderAllPolygonsMap(campaigns, retries = 0) {
+async function renderAllPolygonsMap(campaigns, retries = 0) {
+  const host = document.getElementById('mapViewMap');
+  if (!host) return;
+  host.innerHTML = '';
+
+  // Color palette — deterministic per campaign.id so a polygon's color is stable
+  const PALETTE = ['#e94f37','#39d7aa','#f3a83a','#5fa8ff','#c48cff','#ff6b9a','#6ee7b7','#ffd54f','#a5b4fc','#ff9e6b'];
+  const showLabels = document.getElementById('mapShowLabels').checked;
+
+  // Try Mapbox first (3D, rain radar, fancy chrome). Fall back to Leaflet.
+  const useMapbox = await window.JH_MAPBOX_READY;
+  if (useMapbox && window.JHMap) {
+    return renderAllPolygonsMapbox(campaigns, host, PALETTE, showLabels);
+  }
+
   if (typeof window.L === 'undefined') {
     if (retries >= 40) return;
     return setTimeout(() => renderAllPolygonsMap(campaigns, retries + 1), 100);
   }
-  const host = document.getElementById('mapViewMap');
-  if (!host) return;
-  host.innerHTML = '';
 
   const map = window.L.map(host, { zoomControl: true, attributionControl: false });
 
   window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
   window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.55 }).addTo(map);
-
-  // Color palette — deterministic per campaign.id so a polygon's color is stable
-  const PALETTE = ['#e94f37','#39d7aa','#f3a83a','#5fa8ff','#c48cff','#ff6b9a','#6ee7b7','#ffd54f','#a5b4fc','#ff9e6b'];
-  const showLabels = document.getElementById('mapShowLabels').checked;
 
   const allBounds = [];
   const legendRows = [];
@@ -2493,6 +2552,165 @@ function renderAllPolygonsMap(campaigns, retries = 0) {
   map.on('moveend', () => {
     if (toggle.checked) { clearSwaths(); refetchSwaths(); }
   });
+}
+
+// ============================================================
+// Mapbox-rendered version of the polygon overview map.
+// Same API as renderAllPolygonsMap (fetches IHM swaths, supports
+// the existing toggles + opacity slider + date input) but draws
+// everything in Mapbox GL with 3D buildings, terrain, atmosphere,
+// rain radar, and globe projection.
+// ============================================================
+async function renderAllPolygonsMapbox(campaigns, host, PALETTE, showLabels) {
+  // Pre-compute the polygon list with stable per-campaign colors
+  const polys = campaigns.map((c) => ({
+    id: c.id,
+    name: c.name,
+    points: c.target_input.polygon,
+    color: PALETTE[c.id % PALETTE.length],
+    property_hits: c.property_hits,
+    contact_hits: c.contact_hits,
+    status: c.status,
+    territory_id: c.target_input?.territory_id,
+    created_at: c.created_at,
+  }));
+
+  const map = await window.JHMap.create(host, {
+    pitch: 50,
+    bearing: -10,
+    zoom: 5,
+    lightPreset: document.getElementById('mapLightPreset')?.value || 'day',
+    terrain: true,
+    buildings: true,
+    sky: true,
+  });
+
+  // Add all campaign polygons
+  window.JHMap.addPolygons(map, polys, {
+    sourceId: 'jh-campaigns',
+    onClick: (props, lngLat) => {
+      new window.mapboxgl.Popup({ closeOnClick: true })
+        .setLngLat(lngLat)
+        .setHTML(`
+          <div style="min-width: 220px; color: #111; font-family: system-ui;">
+            <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${escapeHtml(props.name || '')}</div>
+            <div style="font-size: 11px; color: #555; margin-bottom: 8px;">${new Date(props.created_at).toLocaleString()}</div>
+            <div style="font-size: 12px; margin-bottom: 3px;"><strong>${props.property_hits ?? '—'}</strong> leads · <strong>${props.contact_hits ?? '—'}</strong> with contact</div>
+            <div style="font-size: 11px; color: #555; margin-bottom: 8px;">Status: ${props.status}${props.territory_id ? ` · T#${props.territory_id}` : ''}</div>
+            <button onclick="document.querySelector('.drawer-backdrop')?.click(); window.openCampaign(${props.id});" style="padding: 5px 10px; font-size: 11px; background: #0a0b10; color: #fff; border: none; border-radius: 2px; cursor: pointer;">Open campaign →</button>
+          </div>
+        `).addTo(map);
+    },
+  });
+
+  // Optional centroid labels
+  const labelMarkers = [];
+  if (showLabels) {
+    polys.forEach((p) => {
+      const center = polygonCentroid(p.points);
+      if (!center) return;
+      const el = document.createElement('div');
+      el.innerHTML = `<div style="background: rgba(10,11,16,0.85); color: #fff; padding: 3px 8px; border-left: 3px solid ${p.color}; font-family: ui-monospace,monospace; font-size: 10px; white-space: nowrap; pointer-events: none;">#${p.id} · ${escapeHtml(p.name.slice(0, 28))}${p.name.length > 28 ? '…' : ''} · ${p.property_hits ?? 0} leads</div>`;
+      labelMarkers.push(new window.mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat([center.lng, center.lat]).addTo(map));
+    });
+  }
+
+  // Fit bounds to all polygons
+  window.JHMap.fitBounds(map, polys, { padding: 60, pitch: 50 });
+
+  // Legend
+  const legendRows = polys.map((c) =>
+    `<span style="display: inline-flex; align-items: center; gap: 6px; margin: 3px 10px 3px 0; padding: 2px 8px; border: 1px solid ${c.color}; border-radius: 2px;"><span style="width: 10px; height: 10px; background: ${c.color}; display: inline-block;"></span><span style="color: var(--ink);">#${c.id}</span> <span>${escapeHtml(c.name)}</span> <span class="dim">· ${c.property_hits ?? 0} leads</span></span>`
+  );
+  const totalLeads    = polys.reduce((s, c) => s + (c.property_hits || 0), 0);
+  const totalContacts = polys.reduce((s, c) => s + (c.contact_hits  || 0), 0);
+  document.getElementById('mapStatsLine').innerHTML =
+    `${polys.length} polygons on map · ${totalLeads.toLocaleString()} leads · ${totalContacts.toLocaleString()} with contact info`;
+  document.getElementById('mapLegend').innerHTML = legendRows.join('');
+
+  // ── IHM swath toggle ──
+  const swathToggle = document.getElementById('mapShowSwaths');
+  const dateInput = document.getElementById('mapSwathDate');
+  if (dateInput && !dateInput.value) {
+    const d = new Date();
+    dateInput.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  let swathHandle = null;
+  let swathRefetchTimer = null;
+  const refetchSwaths = () => {
+    clearTimeout(swathRefetchTimer);
+    swathRefetchTimer = setTimeout(async () => {
+      if (swathHandle) { swathHandle.remove(); swathHandle = null; }
+      if (!swathToggle.checked || !dateInput.value) return;
+      const [y, m, d] = dateInput.value.split('-');
+      const date = `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+      const b = map.getBounds();
+      swathStatus(`Loading swaths for ${date}…`, 'info');
+      const url = `/api/admin/ihm-swaths?date=${encodeURIComponent(date)}&neLat=${b.getNorth()}&neLng=${b.getEast()}&swLat=${b.getSouth()}&swLng=${b.getWest()}`;
+      const json = await fetch(url).then((r) => r.json()).catch((err) => ({ ok: false, error: err.message }));
+      if (!json?.ok) {
+        swathStatus(`Swath fetch failed: ${json?.error || 'unknown'}`, 'error');
+        return;
+      }
+      const polygons = Array.isArray(json.polygons) ? json.polygons : [];
+      if (!polygons.length) {
+        swathStatus(`No hail polygons on ${date}.`, 'warn');
+        return;
+      }
+      swathHandle = window.JHMap.addIhmSwaths(map, polygons, { opacity: getSwathOpacity() });
+      swathStatus(`${polygons.length} hail swath polygons on ${date}.`, 'ok');
+    }, 250);
+  };
+  swathToggle?.addEventListener('change', () => {
+    if (swathToggle.checked) { showHailLegend(); showOpacityControl(); refetchSwaths(); }
+    else { if (swathHandle) { swathHandle.remove(); swathHandle = null; } hideHailLegend(); hideOpacityControl(); }
+  });
+  dateInput?.addEventListener('change', () => { if (swathToggle.checked) refetchSwaths(); });
+  map.on('moveend', () => { if (swathToggle.checked) refetchSwaths(); });
+  // Opacity slider — live restyle
+  document.getElementById('mapSwathOpacity')?.addEventListener('input', (e) => {
+    const pct = parseInt(e.target.value, 10);
+    document.getElementById('mapSwathOpacityVal').textContent = pct + '%';
+    if (swathHandle) swathHandle.setOpacity(pct / 100);
+  });
+
+  // ── Rain radar toggle ──
+  const rainToggle = document.getElementById('mapShowRain');
+  let rainHandle = null;
+  rainToggle?.addEventListener('change', async () => {
+    if (rainToggle.checked) {
+      rainHandle = await window.JHMap.addRainRadar(map, { opacity: 0.7 });
+      swathStatus('Live rain radar on (refreshes every 5 min).', 'info');
+    } else if (rainHandle) {
+      rainHandle.remove();
+      rainHandle = null;
+    }
+  });
+
+  // ── 3D toggle (just hides building extrusion + flattens pitch) ──
+  const threeDToggle = document.getElementById('mapShow3D');
+  threeDToggle?.addEventListener('change', () => {
+    const on = threeDToggle.checked;
+    if (map.getLayer('jh-3d-buildings')) {
+      map.setLayoutProperty('jh-3d-buildings', 'visibility', on ? 'visible' : 'none');
+    }
+    map.easeTo({ pitch: on ? 50 : 0, bearing: on ? -10 : 0, duration: 800 });
+  });
+
+  // ── Light preset (Mapbox Standard style time-of-day) ──
+  document.getElementById('mapLightPreset')?.addEventListener('change', (e) => {
+    try {
+      map.setConfigProperty('basemap', 'lightPreset', e.target.value);
+    } catch { /* not Standard style */ }
+  });
+}
+
+// Polygon centroid (simple average of vertex lat/lngs — good enough for labels)
+function polygonCentroid(points) {
+  if (!points?.length) return null;
+  let sLat = 0, sLng = 0;
+  for (const p of points) { sLat += p.lat; sLng += p.lng; }
+  return { lat: sLat / points.length, lng: sLng / points.length };
 }
 
 // Fetch + render hail swaths from IHM for the current date + viewport.
@@ -3495,15 +3713,25 @@ function initHailForecast() {
     if (!mapEl) return;
     mapEl.classList.add('fc-fullscreen');
     document.body.classList.add('fc-fullscreen-active');
-    // Leaflet caches container size on init — tell it to remeasure.
-    setTimeout(() => { try { fcState.map?.invalidateSize(true); } catch {} }, 260);
+    // Leaflet caches container size; Mapbox just needs a resize() call.
+    setTimeout(() => {
+      try {
+        if (fcState.useMapbox) fcState.map?.resize();
+        else fcState.map?.invalidateSize(true);
+      } catch {}
+    }, 260);
   }
   function exitFcFullscreen() {
     const mapEl = document.getElementById('fcMap');
     if (!mapEl) return;
     mapEl.classList.remove('fc-fullscreen');
     document.body.classList.remove('fc-fullscreen-active');
-    setTimeout(() => { try { fcState.map?.invalidateSize(true); } catch {} }, 260);
+    setTimeout(() => {
+      try {
+        if (fcState.useMapbox) fcState.map?.resize();
+        else fcState.map?.invalidateSize(true);
+      } catch {}
+    }, 260);
   }
   fcFsBtn?.addEventListener('click', () => {
     const isFullscreen = document.getElementById('fcMap')?.classList.contains('fc-fullscreen');
@@ -3521,13 +3749,64 @@ function initHailForecast() {
 }
 
 async function initFcMap() {
-  await waitForLeaflet();
   const host = document.getElementById('fcMap');
   if (!host || fcState.map) return;
+
+  // Try Mapbox first
+  const useMapbox = await window.JH_MAPBOX_READY;
+  if (useMapbox && window.JHMap) {
+    fcState.useMapbox = true;
+    fcState.map = await window.JHMap.create(host, {
+      center: [-97.5, 39.5],
+      zoom: 4,
+      pitch: 30,
+      bearing: 0,
+      lightPreset: 'day',
+    });
+    // Optional: rain radar layer toggleable via the "rain" hotkey (R)
+    fcState.rainHandle = null;
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'r' && document.activeElement?.tagName !== 'INPUT') {
+        if (fcState.rainHandle) { fcState.rainHandle.remove(); fcState.rainHandle = null; }
+        else window.JHMap.addRainRadar(fcState.map, { opacity: 0.7 }).then((h) => { fcState.rainHandle = h; });
+      }
+    });
+    // Campaign polygons as a faint white overlay
+    try {
+      const res = await fetch('/api/admin/campaigns?limit=200');
+      const data = await res.json();
+      const campaigns = (data.campaigns || []).filter((c) => Array.isArray(c.target_input?.polygon) && c.target_input.polygon.length >= 3);
+      if (campaigns.length) {
+        const features = campaigns.map((c) => ({
+          type: 'Feature',
+          properties: { name: `#${c.id} · ${c.name}` },
+          geometry: { type: 'Polygon', coordinates: [c.target_input.polygon.map((p) => [p.lng, p.lat]).concat([[c.target_input.polygon[0].lng, c.target_input.polygon[0].lat]])] },
+        }));
+        const apply = () => {
+          if (fcState.map.getSource('fc-campaigns')) return;
+          fcState.map.addSource('fc-campaigns', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+          fcState.map.addLayer({
+            id: 'fc-campaigns-fill', type: 'fill', source: 'fc-campaigns',
+            paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.08 },
+          });
+          fcState.map.addLayer({
+            id: 'fc-campaigns-line', type: 'line', source: 'fc-campaigns',
+            paint: { 'line-color': '#ffffff', 'line-width': 1.5, 'line-dasharray': [4, 3] },
+          });
+        };
+        if (fcState.map.isStyleLoaded()) apply();
+        else fcState.map.once('load', apply);
+      }
+    } catch (err) { console.warn('[forecast] campaigns overlay failed:', err); }
+    return;
+  }
+
+  // ── Leaflet fallback ──
+  fcState.useMapbox = false;
+  await waitForLeaflet();
   fcState.map = window.L.map(host, { zoomControl: true, attributionControl: false }).setView([39.5, -97.5], 4);
   window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(fcState.map);
   window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.55 }).addTo(fcState.map);
-  // Campaign overlay
   try {
     const res = await fetch('/api/admin/campaigns?limit=200');
     const data = await res.json();
@@ -3598,8 +3877,17 @@ async function renderFc() {
   if (fcState.kind === 'hail' && fcState.day >= 3) effectiveKind = 'cat';
   if (fcState.day >= 4) effectiveKind = 'prob';
 
-  // Clear old layer
-  if (fcState.layer) { fcState.map.removeLayer(fcState.layer); fcState.layer = null; }
+  // Clear old layer (handles both Leaflet + Mapbox)
+  if (fcState.useMapbox) {
+    ['fc-spc-fill', 'fc-spc-line'].forEach((id) => {
+      if (fcState.map.getLayer(id)) fcState.map.removeLayer(id);
+    });
+    if (fcState.map.getSource('fc-spc')) fcState.map.removeSource('fc-spc');
+  } else if (fcState.layer) {
+    fcState.map.removeLayer(fcState.layer);
+    fcState.layer = null;
+  }
+
   summaryEl.innerHTML = '<span class="spin"></span> &nbsp;Loading Day ' + fcState.day + ' · ' + effectiveKind + '…';
 
   let geo;
@@ -3618,29 +3906,66 @@ async function renderFc() {
     return;
   }
 
-  fcState.layer = window.L.geoJSON(geo, {
-    style: (f) => ({
-      color: f.properties?.stroke || '#888',
-      weight: 1.5,
-      fillColor: f.properties?.fill || '#888',
-      fillOpacity: 0.55,
-    }),
-    onEachFeature: (f, layer) => {
-      const p = f.properties || {};
-      layer.bindPopup(`<div style="color:#111;font-size:12px;line-height:1.5;">
-        <strong style="display:inline-block;padding:2px 8px;background:${p.fill || '#888'};color:#000;border-radius:2px;">${escapeHtml(p.LABEL2 || p.LABEL || 'Risk')}</strong>
-        <div style="margin-top:6px;">Valid ${fmtSpc(p.VALID_ISO)} – ${fmtSpc(p.EXPIRE_ISO)}</div>
-        ${p.FORECASTER ? `<div>Forecaster: ${escapeHtml(p.FORECASTER)}</div>` : ''}
-      </div>`);
-    },
-  }).addTo(fcState.map);
+  if (fcState.useMapbox) {
+    // Mapbox path — add as a single GeoJSON source with data-driven styling
+    fcState.map.addSource('fc-spc', { type: 'geojson', data: geo });
+    // Insert BELOW campaigns so the white dashed campaign outlines stay on top
+    const beforeId = fcState.map.getLayer('fc-campaigns-line') ? 'fc-campaigns-fill' : undefined;
+    fcState.map.addLayer({
+      id: 'fc-spc-fill', type: 'fill', source: 'fc-spc',
+      paint: {
+        'fill-color': ['coalesce', ['get', 'fill'], '#888'],
+        'fill-opacity': 0.55,
+      },
+    }, beforeId);
+    fcState.map.addLayer({
+      id: 'fc-spc-line', type: 'line', source: 'fc-spc',
+      paint: {
+        'line-color': ['coalesce', ['get', 'stroke'], '#888'],
+        'line-width': 1.5,
+      },
+    }, beforeId);
+    // Click → popup
+    if (!fcState._spcClickWired) {
+      fcState.map.on('click', 'fc-spc-fill', (e) => {
+        const p = e.features?.[0]?.properties || {};
+        new window.mapboxgl.Popup({ closeOnClick: true })
+          .setLngLat(e.lngLat)
+          .setHTML(`<div style="color:#111;font-size:12px;line-height:1.5;font-family:system-ui;">
+            <strong style="display:inline-block;padding:2px 8px;background:${p.fill || '#888'};color:#000;border-radius:2px;">${escapeHtml(p.LABEL2 || p.LABEL || 'Risk')}</strong>
+            <div style="margin-top:6px;">Valid ${fmtSpc(p.VALID_ISO)} – ${fmtSpc(p.EXPIRE_ISO)}</div>
+            ${p.FORECASTER ? `<div>Forecaster: ${escapeHtml(p.FORECASTER)}</div>` : ''}
+          </div>`).addTo(fcState.map);
+      });
+      fcState.map.on('mouseenter', 'fc-spc-fill', () => (fcState.map.getCanvas().style.cursor = 'pointer'));
+      fcState.map.on('mouseleave', 'fc-spc-fill', () => (fcState.map.getCanvas().style.cursor = ''));
+      fcState._spcClickWired = true;
+    }
+  } else {
+    fcState.layer = window.L.geoJSON(geo, {
+      style: (f) => ({
+        color: f.properties?.stroke || '#888',
+        weight: 1.5,
+        fillColor: f.properties?.fill || '#888',
+        fillOpacity: 0.55,
+      }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties || {};
+        layer.bindPopup(`<div style="color:#111;font-size:12px;line-height:1.5;">
+          <strong style="display:inline-block;padding:2px 8px;background:${p.fill || '#888'};color:#000;border-radius:2px;">${escapeHtml(p.LABEL2 || p.LABEL || 'Risk')}</strong>
+          <div style="margin-top:6px;">Valid ${fmtSpc(p.VALID_ISO)} – ${fmtSpc(p.EXPIRE_ISO)}</div>
+          ${p.FORECASTER ? `<div>Forecaster: ${escapeHtml(p.FORECASTER)}</div>` : ''}
+        </div>`);
+      },
+    }).addTo(fcState.map);
 
-  // Keep campaigns visible above SPC layer — L.layerGroup() has no
-  // bringToFront() of its own, so walk its children.
-  if (fcState.campaignLayer) {
-    fcState.campaignLayer.eachLayer((child) => {
-      if (typeof child.bringToFront === 'function') child.bringToFront();
-    });
+    // Keep campaigns visible above SPC layer — L.layerGroup() has no
+    // bringToFront() of its own, so walk its children.
+    if (fcState.campaignLayer) {
+      fcState.campaignLayer.eachLayer((child) => {
+        if (typeof child.bringToFront === 'function') child.bringToFront();
+      });
+    }
   }
 
   // Summary: show tiers + issue time
