@@ -3866,6 +3866,18 @@ async function initFcMap() {
       // 300mi (482.8 km) ring polygon, computed in WGS84 along a geodesic
       const HQ = [-97.8531, 30.5788];
       const ringFeature = makeGeoCircle(HQ, 300);
+      // Fit bounds so the entire 300mi ring is visible — overrides the
+      // initial zoom 6.5 hint with a viewport-responsive zoom that
+      // always frames the service area exactly. The "300mi view" becomes
+      // literal: ring touches the map edges, no scrolling required.
+      const ring = ringFeature.geometry.coordinates[0];
+      const lngs = ring.map(p => p[0]);
+      const lats = ring.map(p => p[1]);
+      fcState.map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 24, duration: 0, animate: false }
+      );
+
       fcState.map.addSource('fc-hq-ring', { type: 'geojson', data: ringFeature });
       fcState.map.addLayer({
         id: 'fc-hq-ring-line', type: 'line', source: 'fc-hq-ring',
