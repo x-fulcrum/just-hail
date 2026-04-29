@@ -2763,6 +2763,35 @@ function mountRainPlaybackDock(hostEl, handle, dockId) {
   return { remove: () => dock.remove() };
 }
 
+// Build a GeoJSON Polygon approximating a circle of the given radius in
+// statute miles around a [lng, lat] center, sampled at 64 points along a
+// geodesic. Used for the 300mi service-radius ring on the forecast map.
+function makeGeoCircle(centerLngLat, radiusMiles, segments = 64) {
+  const [lng, lat] = centerLngLat;
+  const earthRadiusMi = 3958.8;
+  const angularDist = radiusMiles / earthRadiusMi;
+  const φ1 = lat * Math.PI / 180;
+  const λ1 = lng * Math.PI / 180;
+  const ring = [];
+  for (let i = 0; i <= segments; i++) {
+    const θ = (i / segments) * 2 * Math.PI;
+    const φ2 = Math.asin(
+      Math.sin(φ1) * Math.cos(angularDist) +
+      Math.cos(φ1) * Math.sin(angularDist) * Math.cos(θ)
+    );
+    const λ2 = λ1 + Math.atan2(
+      Math.sin(θ) * Math.sin(angularDist) * Math.cos(φ1),
+      Math.cos(angularDist) - Math.sin(φ1) * Math.sin(φ2)
+    );
+    ring.push([λ2 * 180 / Math.PI, φ2 * 180 / Math.PI]);
+  }
+  return {
+    type: 'Feature',
+    properties: { radius_miles: radiusMiles },
+    geometry: { type: 'Polygon', coordinates: [ring] },
+  };
+}
+
 // Polygon centroid (simple average of vertex lat/lngs — good enough for labels)
 function polygonCentroid(points) {
   if (!points?.length) return null;
@@ -3829,6 +3858,43 @@ async function initFcMap() {
       buildings: false,               // not relevant at this zoom
       terrain: false,                 // flatten so polygon fills aren't shaded weird
     });
+    // Just Hail HQ marker + 300mi service-radius ring. Anchors the view
+    // — without it, the centered map looks arbitrary; with it, the 300mi
+    // zoom feels intentional and the SPC outlook areas have spatial
+    // reference to the shop's location.
+    fcState.map.once('load', () => {
+      // 300mi (482.8 km) ring polygon, computed in WGS84 along a geodesic
+      const HQ = [-97.8531, 30.5788];
+      const ringFeature = makeGeoCircle(HQ, 300);
+      fcState.map.addSource('fc-hq-ring', { type: 'geojson', data: ringFeature });
+      fcState.map.addLayer({
+        id: 'fc-hq-ring-line', type: 'line', source: 'fc-hq-ring',
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 1.3,
+          'line-opacity': 0.35,
+          'line-dasharray': [3, 3],
+        },
+      });
+      // HQ pin (a clean dot, not a default Mapbox marker)
+      const pinEl = document.createElement('div');
+      pinEl.style.cssText = `
+        width: 14px; height: 14px; background: var(--accent);
+        border: 2px solid #fff; border-radius: 50%;
+        box-shadow: 0 0 0 4px rgba(233,79,55,0.25), 0 0 16px rgba(233,79,55,0.6);
+        cursor: pointer;
+      `;
+      pinEl.title = 'Just Hail · Leander, TX (HQ) · 300mi service ring';
+      new window.mapboxgl.Marker({ element: pinEl, anchor: 'center' })
+        .setLngLat(HQ)
+        .setPopup(new window.mapboxgl.Popup({ offset: 14 }).setHTML(
+          '<div style="color:#111;font-family:system-ui;font-size:12px;line-height:1.5;">' +
+          '<strong>Just Hail · HQ</strong><br>Leander, TX<br>' +
+          '<span style="color:#555;">300 mi service ring shown</span></div>'
+        ))
+        .addTo(fcState.map);
+    });
+
     // Live rain radar starts OFF — only on when the checkbox is toggled.
     // The SPC categorical / hail % layers are the headline data on this map.
     fcState.rainHandle = null;
