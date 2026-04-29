@@ -453,13 +453,37 @@
   // setOpacity(), refresh(), remove(), and exposes the current
   // frame timestamp via getCurrentFrame() so the UI can show "16 min ago".
   // ──────────────────────────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────
+  // Live rain radar overlay via RainViewer (free, no auth).
+  //
+  // Pro-grade rendering — choices borrowed from Windy / Ventusky /
+  // AccuWeather and tuned for our admin's dark basemap:
+  //   - 512px tiles (4× pixel density vs 256 → crisper at retina zoom)
+  //   - WebP encoding (smaller, smoother color gradients than PNG)
+  //   - smooth=1, snow=1 (RainViewer's gaussian-smoothed contour mode)
+  //   - color scheme 4 (NWS / Weather Channel familiar palette)
+  //   - 350ms crossfade between frames (smooth "morph" instead of snap)
+  //   - 800ms per frame (slow enough to read, fast enough to feel alive)
+  //   - linear raster resampling (no jagged tile-edge pixelation)
+  //   - Frame N+1 pre-warmed during N's display → no stutter
+  //   - Slight saturation + contrast bump so storms pop on dark base
+  //   - minzoom=6 so we never hit RainViewer's opaque placeholder PNGs
+  // ──────────────────────────────────────────────────────────────
   const RAINVIEWER_API = 'https://api.rainviewer.com/public/weather-maps.json';
-  const RAIN_MINZOOM = 6;          // below this, RainViewer serves opaque placeholders
-  const FRAME_INTERVAL_MS = 600;   // ~600ms per frame = realistic storm pacing
+  const RAIN_MINZOOM = 6;          // below this, RainViewer serves placeholders
+  const FRAME_INTERVAL_MS = 800;   // 800ms per frame = readable storm motion
+  const TILE_SIZE = 512;
+  const TILE_EXT = 'webp';
+  const COLOR_SCHEME = 4;          // NWS-style — familiar from local TV news
+  const SMOOTH = 1;
+  const SNOW = 1;
+  const FADE_MS = 350;             // crossfade between consecutive frames
+  const RASTER_SATURATION = 0.1;   // mild pop, doesn't blow out colors
+  const RASTER_CONTRAST = 0.05;    // a touch more cell definition
 
   NS.addRainRadar = async function addRainRadar(map, opts = {}) {
     const baseId = opts.sourceId || 'jh-rain';
-    const opacity = opts.opacity != null ? opts.opacity : 0.7;
+    const opacity = opts.opacity != null ? opts.opacity : 0.75;
     let manifest = null;
     let frames = [];               // [{ time, path, sourceId, layerId, loaded }]
     let currentIdx = -1;
@@ -487,12 +511,15 @@
 
     function ensureFrameSource(frame) {
       if (frame.loaded) return;
-      const tileTpl = `${manifest.host}${frame.path}/256/{z}/{x}/{y}/${opts.colorScheme ?? 2}/${opts.smooth ?? 1}_${opts.snow ?? 1}.png`;
+      const colorScheme = opts.colorScheme ?? COLOR_SCHEME;
+      const smooth = opts.smooth ?? SMOOTH;
+      const snow = opts.snow ?? SNOW;
+      const tileTpl = `${manifest.host}${frame.path}/${TILE_SIZE}/{z}/{x}/{y}/${colorScheme}/${smooth}_${snow}.${TILE_EXT}`;
       if (!map.getSource(frame.sourceId)) {
         map.addSource(frame.sourceId, {
           type: 'raster',
           tiles: [tileTpl],
-          tileSize: 256,
+          tileSize: TILE_SIZE,
           minzoom: RAIN_MINZOOM,
           attribution: 'Radar © <a href="https://rainviewer.com">RainViewer</a>',
         });
@@ -506,11 +533,25 @@
           layout: { visibility: 'none' },
           paint: {
             'raster-opacity': opacity,
-            'raster-fade-duration': 100,   // brief crossfade between frames
+            'raster-opacity-transition': { duration: FADE_MS },
+            'raster-fade-duration': FADE_MS,
+            'raster-resampling': 'linear',
+            'raster-saturation': RASTER_SATURATION,
+            'raster-contrast': RASTER_CONTRAST,
           },
         }, findBeforeLayer());
       }
       frame.loaded = true;
+    }
+
+    // Pre-warm the next N frames during current frame's display so playback
+    // never stutters waiting on tile downloads. Mapbox starts loading the
+    // moment the source is added; visibility:none keeps it dark until shown.
+    function prewarm(idxAround, lookahead = 2) {
+      for (let d = 1; d <= lookahead; d++) {
+        const ahead = ((idxAround + d) % frames.length + frames.length) % frames.length;
+        ensureFrameSource(frames[ahead]);
+      }
     }
 
     function showFrame(idx) {
@@ -518,17 +559,39 @@
       const wrap = ((idx % frames.length) + frames.length) % frames.length;
       const target = frames[wrap];
       ensureFrameSource(target);
-      // Hide all other frames
+
+      // Crossfade: keep the OUTGOING frame visible briefly so the new one
+      // can fade in over it instead of snapping. Hide the OUTGOING frame
+      // after the fade duration completes.
+      const outgoing = currentIdx >= 0 && currentIdx !== wrap ? frames[currentIdx] : null;
+
+      // Show the new frame first → fade-in starts
+      map.setLayoutProperty(target.layerId, 'visibility', 'visible');
+
+      if (outgoing && map.getLayer(outgoing.layerId)) {
+        // Hide the outgoing frame AFTER the crossfade duration so the
+        // overlap is perceived as a smooth morph between cells.
+        setTimeout(() => {
+          if (map.getLayer(outgoing.layerId)) {
+            map.setLayoutProperty(outgoing.layerId, 'visibility', 'none');
+          }
+        }, FADE_MS);
+      }
+
+      // Hide every other frame (e.g., scrubber jumped many steps)
       for (const f of frames) {
-        if (f === target) continue;
+        if (f === target || f === outgoing) continue;
         if (map.getLayer(f.layerId)) {
           map.setLayoutProperty(f.layerId, 'visibility', 'none');
         }
       }
-      map.setLayoutProperty(target.layerId, 'visibility', 'visible');
+
       currentIdx = wrap;
+      // Pre-warm next 2 frames so the upcoming transition is also smooth
+      prewarm(wrap, 2);
+
       for (const cb of onFrameCbs) {
-        try { cb({ index: wrap, total: frames.length, time: target.time, isNewest: wrap === frames.length - 1 }); } catch {}
+        try { cb({ index: wrap, total: frames.length, time: target.time, isNewest: wrap === frames.findIndex((ff) => ff.isForecast) - 1 || (wrap === frames.length - 1 && !frames.some((ff) => ff.isForecast)) }); } catch {}
       }
     }
 
@@ -554,10 +617,12 @@
         isForecast: i >= past.length,
       }));
 
-      // Pre-load the layer for the latest frame so first paint is instant
+      // Pre-load the latest past frame ("now") + a couple ahead so the
+      // initial display + first scrub feel instant.
       if (showLatest && frames.length) {
         const latestIdx = past.length - 1;   // last past frame = "now"
         ensureFrameSource(frames[latestIdx]);
+        prewarm(latestIdx, 2);
         showFrame(latestIdx);
       }
     }
@@ -600,7 +665,11 @@
       isPlaying: () => playTimer != null,
       step: (delta = 1) => { pause(); showFrame(currentIdx + delta); },
       goto: (idx) => { pause(); showFrame(idx); },
-      goLatest: () => { pause(); showFrame(frames.findIndex((f) => f.isForecast) - 1 + (frames.some((f) => f.isForecast) ? 0 : frames.length)); },
+      goLatest: () => {
+        pause();
+        const past = frames.filter((f) => !f.isForecast);
+        showFrame(past.length - 1);
+      },
       // Inspection
       getFrameCount: () => frames.length,
       getPastCount: () => frames.filter((f) => !f.isForecast).length,
