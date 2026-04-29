@@ -3814,43 +3814,46 @@ async function initFcMap() {
   const useMapbox = await window.JH_MAPBOX_READY;
   if (useMapbox && window.JHMap) {
     fcState.useMapbox = true;
-    // Center on Leander, TX with a ~300mi radius view (zoom 6.5 fits the
-    // service area on a typical viewport — Charlie's primary geography).
+    // Center on Leander, TX with a ~300mi-radius view. Use MERCATOR
+    // projection — globe projection distorts the multi-state SPC outlook
+    // polygons at this zoom (visible curvature warps the risk-area edges)
+    // and the 300mi service-area view doesn't gain anything from a globe
+    // anyway. Mercator at zoom 6.5 = clean, flat, accurate.
     fcState.map = await window.JHMap.create(host, {
       center: [-97.8531, 30.5788],   // Leander, TX
       zoom: 6.5,
-      pitch: 30,
+      pitch: 0,                       // flat — outlooks are 2D data
       bearing: 0,
       lightPreset: 'day',
+      projection: 'mercator',
+      buildings: false,               // not relevant at this zoom
+      terrain: false,                 // flatten so polygon fills aren't shaded weird
     });
-    // Live rain radar — ON by default. This is the only place we render it.
-    // Auto-plays through the 13 past frames so you see storm motion immediately.
+    // Live rain radar starts OFF — only on when the checkbox is toggled.
+    // The SPC categorical / hail % layers are the headline data on this map.
     fcState.rainHandle = null;
-    fcState.map.once('load', async () => {
-      fcState.rainHandle = await window.JHMap.addRainRadar(fcState.map, {
-        opacity: 0.75,
-        autoplay: true,
-      });
-      mountRainPlaybackDock(host, fcState.rainHandle, 'fcRainDock');
-      // Also keep a small toggle in the toolbar so it's easy to hide
-      const fcRainCheck = document.getElementById('fcShowRain');
-      if (fcRainCheck) {
-        fcRainCheck.checked = true;
-        fcRainCheck.addEventListener('change', () => {
-          const el = document.getElementById('fcRainDock');
-          if (fcRainCheck.checked) {
-            if (!fcState.rainHandle) {
-              window.JHMap.addRainRadar(fcState.map, { opacity: 0.75, autoplay: true })
-                .then((h) => { fcState.rainHandle = h; mountRainPlaybackDock(host, h, 'fcRainDock'); });
-            }
-          } else if (fcState.rainHandle) {
-            fcState.rainHandle.remove();
-            fcState.rainHandle = null;
-            if (el) el.remove();
+    const fcRainCheck = document.getElementById('fcShowRain');
+    if (fcRainCheck) {
+      fcRainCheck.checked = false;
+      fcRainCheck.addEventListener('change', async () => {
+        const existingDock = document.getElementById('fcRainDock');
+        if (fcRainCheck.checked) {
+          if (!fcState.rainHandle) {
+            fcState.rainHandle = await window.JHMap.addRainRadar(fcState.map, {
+              opacity: 0.75,
+              autoplay: true,
+            });
+            mountRainPlaybackDock(host, fcState.rainHandle, 'fcRainDock');
           }
-        });
-      }
-    });
+        } else if (fcState.rainHandle) {
+          fcState.rainHandle.remove();
+          fcState.rainHandle = null;
+          if (existingDock) existingDock.remove();
+        }
+      });
+    }
+    // Expose fcState on window for debugging via console
+    window.fcState = fcState;
     // Campaign polygons as a faint white overlay
     try {
       const res = await fetch('/api/admin/campaigns?limit=200');
@@ -3987,24 +3990,57 @@ async function renderFc() {
   }
 
   if (fcState.useMapbox) {
-    // Mapbox path — add as a single GeoJSON source with data-driven styling
-    fcState.map.addSource('fc-spc', { type: 'geojson', data: geo });
-    // Insert BELOW campaigns so the white dashed campaign outlines stay on top
-    const beforeId = fcState.map.getLayer('fc-campaigns-line') ? 'fc-campaigns-fill' : undefined;
-    fcState.map.addLayer({
-      id: 'fc-spc-fill', type: 'fill', source: 'fc-spc',
-      paint: {
-        'fill-color': ['coalesce', ['get', 'fill'], '#888'],
-        'fill-opacity': 0.55,
-      },
-    }, beforeId);
-    fcState.map.addLayer({
-      id: 'fc-spc-line', type: 'line', source: 'fc-spc',
-      paint: {
-        'line-color': ['coalesce', ['get', 'stroke'], '#888'],
-        'line-width': 1.5,
-      },
-    }, beforeId);
+    // Mapbox path — wait for the style to be fully loaded before adding
+    // sources/layers, otherwise addLayer can silently no-op when called
+    // mid-style-swap (the cause of the "broken on globe" rendering Charlie
+    // saw — the SPC layer was getting added before Standard finished loading).
+    const addSpcLayer = () => {
+      if (!fcState.map.isStyleLoaded()) {
+        fcState.map.once('styledata', addSpcLayer);
+        return;
+      }
+      // Clean any previous attempt
+      ['fc-spc-line', 'fc-spc-fill'].forEach((id) => {
+        if (fcState.map.getLayer(id)) fcState.map.removeLayer(id);
+      });
+      if (fcState.map.getSource('fc-spc')) fcState.map.removeSource('fc-spc');
+
+      fcState.map.addSource('fc-spc', { type: 'geojson', data: geo });
+
+      // Anchor the SPC layer beneath place labels so city names + interstate
+      // shields stay readable on top of the colored risk areas. We do NOT
+      // try to anchor it relative to fc-campaigns-fill because that race
+      // (campaigns added in onLoad, SPC added immediately on first render)
+      // was leaving the SPC layer unanchored at the very bottom — fine in
+      // mercator, but broken-looking when other layers happened to land
+      // above it.
+      const layers = fcState.map.getStyle().layers || [];
+      const labelLayer = layers.find((l) => l.type === 'symbol' && l.layout?.['text-field']);
+
+      fcState.map.addLayer({
+        id: 'fc-spc-fill', type: 'fill', source: 'fc-spc',
+        paint: {
+          'fill-color': ['case', ['has', 'fill'], ['get', 'fill'], '#888888'],
+          // 65% so the green/yellow/red bands actually read against the
+          // pastel basemap. SPC's own viewer uses ~70%. 0.55 was too washed.
+          'fill-opacity': 0.65,
+          'fill-opacity-transition': { duration: 200 },
+        },
+      }, labelLayer?.id);
+
+      fcState.map.addLayer({
+        id: 'fc-spc-line', type: 'line', source: 'fc-spc',
+        paint: {
+          'line-color': ['case', ['has', 'stroke'], ['get', 'stroke'], '#444444'],
+          'line-width': 2.2,
+          'line-opacity': 0.9,
+        },
+      }, labelLayer?.id);
+
+      console.log('[forecast] SPC layer added — features:', features.length, '· labels:', features.map(f => f.properties?.LABEL2 || f.properties?.LABEL).join(', '));
+    };
+    addSpcLayer();
+
     // Click → popup
     if (!fcState._spcClickWired) {
       fcState.map.on('click', 'fc-spc-fill', (e) => {
