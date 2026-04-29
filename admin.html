@@ -3870,12 +3870,22 @@ async function initFcMap() {
       fcState.map.addLayer({
         id: 'fc-hq-ring-line', type: 'line', source: 'fc-hq-ring',
         paint: {
-          'line-color': '#ffffff',
-          'line-width': 1.3,
-          'line-opacity': 0.35,
-          'line-dasharray': [3, 3],
+          'line-color': '#e94f37',                // accent — matches the HQ pin
+          'line-width': 1.6,
+          'line-opacity': 0.55,
+          'line-dasharray': [4, 3],
         },
       });
+      // Faint fill to make the 300mi service area read at a glance — a
+      // subtle "this is your zone" highlight that doesn't compete with
+      // the SPC outlook polygons.
+      fcState.map.addLayer({
+        id: 'fc-hq-ring-fill', type: 'fill', source: 'fc-hq-ring',
+        paint: {
+          'fill-color': '#e94f37',
+          'fill-opacity': 0.04,
+        },
+      }, 'fc-hq-ring-line');
       // HQ pin (a clean dot, not a default Mapbox marker)
       const pinEl = document.createElement('div');
       pinEl.style.cssText = `
