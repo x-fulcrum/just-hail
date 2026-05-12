@@ -155,18 +155,23 @@ function App() {
             </p>
             <div style={{ marginTop: 48, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <a href="#contact" style={{
-                padding: '18px 30px', background: cfg.accent, color: '#0a0b10',
-                textDecoration: 'none', fontFamily: 'var(--font-ui)', fontSize: 15, fontWeight: 500,
-                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 10,
-              }}>Request a free estimate <span>→</span></a>
+                padding: '22px 36px', background: cfg.accent, color: '#0a0b10',
+                textDecoration: 'none', fontFamily: 'var(--font-ui)',
+                fontSize: 19, fontWeight: 700, letterSpacing: '0.01em',
+                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 12,
+                textShadow: 'none',
+                boxShadow: '0 6px 24px rgba(233, 79, 55, 0.35)',
+              }}>Request a free estimate <span style={{ fontSize: 22 }}>→</span></a>
               <a href="tel:+15122213013" style={{
-                padding: '18px 30px', background: 'rgba(255,255,255,0.06)', color: '#f5f3ee',
-                border: '1px solid rgba(245,243,238,0.25)',
+                padding: '22px 36px', background: 'rgba(255,255,255,0.10)', color: '#ffffff',
+                border: '1px solid rgba(245,243,238,0.4)',
                 backdropFilter: 'blur(8px)',
-                textDecoration: 'none', fontFamily: 'var(--font-ui)', fontSize: 15,
-                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 10,
+                textDecoration: 'none', fontFamily: 'var(--font-ui)',
+                fontSize: 19, fontWeight: 600, letterSpacing: '0.01em',
+                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 12,
+                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
               }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.accent }} />
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.accent, boxShadow: `0 0 8px ${cfg.accent}` }} />
                 (512) 221-3013
               </a>
             </div>
