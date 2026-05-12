@@ -155,23 +155,28 @@ function App() {
             </p>
             <div style={{ marginTop: 48, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               <a href="#contact" style={{
-                padding: '22px 36px', background: cfg.accent, color: '#0a0b10',
+                padding: '20px 34px', background: cfg.accent, color: '#0a0b10',
                 textDecoration: 'none', fontFamily: 'var(--font-ui)',
-                fontSize: 19, fontWeight: 700, letterSpacing: '0.01em',
-                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 12,
+                fontSize: 24, fontWeight: 700, letterSpacing: '0.01em',
+                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 14,
                 textShadow: 'none',
                 boxShadow: '0 6px 24px rgba(233, 79, 55, 0.35)',
-              }}>Request a free estimate <span style={{ fontSize: 22 }}>→</span></a>
+              }}>Request a free estimate <span style={{ fontSize: 28 }}>→</span></a>
               <a href="tel:+15122213013" style={{
-                padding: '22px 36px', background: 'rgba(255,255,255,0.10)', color: '#ffffff',
+                padding: '20px 34px', background: 'rgba(255,255,255,0.10)', color: '#ffffff',
                 border: '1px solid rgba(245,243,238,0.4)',
                 backdropFilter: 'blur(8px)',
                 textDecoration: 'none', fontFamily: 'var(--font-ui)',
-                fontSize: 19, fontWeight: 600, letterSpacing: '0.01em',
-                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 12,
+                fontSize: 24, fontWeight: 600, letterSpacing: '0.01em',
+                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 14,
                 textShadow: '0 2px 10px rgba(0,0,0,0.5)',
               }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: cfg.accent, boxShadow: `0 0 8px ${cfg.accent}` }} />
+                <span style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: '#22c55e',
+                  boxShadow: '0 0 12px #22c55e, 0 0 4px #22c55e',
+                  animation: 'pulse 1.6s ease-in-out infinite',
+                }} />
                 (512) 221-3013
               </a>
             </div>
