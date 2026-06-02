@@ -61,6 +61,17 @@
   .fade-in { animation: fadeIn 300ms ease-out; }
   .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 1.8s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.3); } }
+  /* "N NEW" badge — pulses red glow to draw the eye toward fresh leads */
+  @keyframes pulse-badge {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(233, 79, 55, 0.55); }
+    50%      { box-shadow: 0 0 0 10px rgba(233, 79, 55, 0); }
+  }
+  /* Row-flash highlight when a fresh lead row first paints */
+  @keyframes row-flash {
+    0%   { background: rgba(233, 79, 55, 0.25); }
+    100% { background: transparent; }
+  }
+  tr.row-new { animation: row-flash 2.8s ease-out 1; }
   .stat-val { font-family: var(--font-display); font-size: 40px; font-weight: 400; letter-spacing: -0.02em; line-height: 1; }
   .stat-lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); margin-top: 10px; }
   .stat-delta { display: inline-block; margin-top: 8px; padding: 2px 6px; font-family: var(--font-mono); font-size: 10px; border-radius: 2px; background: rgba(57,215,170,0.12); color: var(--green); }
@@ -690,9 +701,22 @@
         <h1 class="h1" style="margin-top: 8px; font-size: 44px;">Estimate requests</h1>
         <p class="dim" style="margin: 10px 0 0; font-size: 14px;">Every form submission from justhail.com, in order.</p>
       </div>
-      <div style="display: flex; gap: 10px;">
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <!-- Pulsing "N NEW" badge — visible only when new submissions arrive
+             since the page was opened. Click to scroll-to + clear. -->
+        <button id="newLeadsBadge" type="button" style="
+          display: none; align-items: center; gap: 8px;
+          padding: 8px 14px; background: var(--accent); color: #0a0b10;
+          border: none; border-radius: 2px; cursor: pointer;
+          font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+          letter-spacing: 0.08em; text-transform: uppercase;
+          box-shadow: 0 0 0 0 rgba(233, 79, 55, 0.6);
+          animation: pulse-badge 1.6s ease-in-out infinite;
+        " title="Click to see the new submissions">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #0a0b10;"></span>
+          <span id="newLeadsCount">0</span> new
+        </button>
         <button class="btn btn-ghost" id="exportBtn">Export CSV</button>
-        <a class="btn" href="#" id="sheetLink" target="_blank" rel="noopener">Open Google Sheet ↗</a>
       </div>
     </div>
 
@@ -764,9 +788,11 @@
 
 <script>
 // =========================================================
-// CONFIG — must match apps-script.gs
+// CONFIG
 // =========================================================
-const ENDPOINT = 'https://script.google.com/macros/s/AKfycbzi_4_ZaBRafJ5bZpxavtNF7fzS84bJHHicANZQZiybTZpwaStqK72Qc1KGTAKzmkf4vQ/exec';
+// (Legacy Apps Script ENDPOINT removed 2026-05-12 — estimate requests
+//  now read from /api/admin/estimates against the Supabase leads table.
+//  Source of truth = the leads row inserted by /api/form-submit.)
 const ADMIN_KEY = 'jh-leander-2026';
 const SESSION_KEY = 'jh-admin-auth';
 const CMD_POLL_MS = 15000;
@@ -3206,35 +3232,35 @@ document.getElementById('logoutBtn')?.addEventListener('click', () => {
 });
 
 // =========================================================
-// DATA FETCH via JSONP (bypasses CORS for Apps Script)
+// DATA FETCH — Supabase-backed via /api/admin/estimates
+// (Replaced the old Google Apps Script JSONP path on 2026-05-12 when
+//  the Apps Script /exec URL rotated and broke silently. Supabase is
+//  now the single source of truth; every form submission lands there
+//  via /api/form-submit and shows up here within the auto-refresh.)
 // =========================================================
 let allLeads = [];
 let fetchInFlight = false;
+// Per-session marker: the highest submitted_at we'd already seen on
+// the FIRST fetch after the page opened. New-leads detection compares
+// every subsequent fetch's max timestamp against this baseline.
+let baselineMaxTs = 0;
+let baselineSet = false;
+const knownLeadIds = new Set();
 
-function fetchLeads() {
+async function fetchLeads() {
   if (fetchInFlight) return;
   fetchInFlight = true;
-  const cb = 'jh_cb_' + Date.now();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Request timed out'));
-    }, 15000);
-    function cleanup() {
-      delete window[cb];
-      if (s.parentNode) s.parentNode.removeChild(s);
-      fetchInFlight = false;
-      clearTimeout(timer);
+  try {
+    const url = '/api/admin/estimates?key=' + encodeURIComponent(ADMIN_KEY) + '&t=' + Date.now();
+    const r = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      throw new Error(`HTTP ${r.status}${body ? ': ' + body.slice(0, 180) : ''}`);
     }
-    window[cb] = (data) => {
-      cleanup();
-      resolve(data);
-    };
-    const s = document.createElement('script');
-    s.src = ENDPOINT + '?key=' + encodeURIComponent(ADMIN_KEY) + '&callback=' + cb + '&t=' + Date.now();
-    s.onerror = () => { cleanup(); reject(new Error('Network error')); };
-    document.head.appendChild(s);
-  });
+    return await r.json();
+  } finally {
+    fetchInFlight = false;
+  }
 }
 
 // =========================================================
@@ -3346,8 +3372,9 @@ function renderLeads() {
   leadsBody.innerHTML = leads.map((l, i) => {
     const status = l.status || 'New';
     const statusCls = status.toLowerCase();
+    const freshCls = l._isFresh ? ' row-new' : '';
     return `
-      <tr class="fade-in" data-row="${l._row}" style="cursor: pointer; animation-delay: ${Math.min(i, 10) * 20}ms;">
+      <tr class="fade-in${freshCls}" data-row="${l._row}" style="cursor: pointer; animation-delay: ${Math.min(i, 10) * 20}ms;">
         <td class="mono dim" style="font-size: 11px;">${fmtTime(l.submitted_at)}</td>
         <td class="mono" style="font-size: 11px; color: var(--accent);">${escapeHtml(l.reference_ || '—')}</td>
         <td>
@@ -3443,7 +3470,7 @@ function openDrawer(lead) {
         </div>
 
         <div style="margin-top: 36px; padding: 16px; border: 1px dashed var(--hair-strong); font-size: 12px; color: var(--ink-dim); line-height: 1.5;">
-          <strong style="color: var(--ink);">Status changes</strong> happen in the Google Sheet itself — edit the <em>Status</em> column to New / Contacted / Scheduled / Closed. The dashboard will reflect the change within 45 seconds.
+          <strong style="color: var(--ink);">Status changes</strong> happen via SalesRabbit or the lead drawer in the campaign view. The dashboard auto-refreshes every 60 seconds and pulses the <span style="color: var(--accent); font-weight: 600;">NEW</span> badge when fresh submissions arrive.
         </div>
       </div>
     </aside>
@@ -3504,26 +3531,127 @@ async function loadAndRender() {
     const refreshBtn = document.getElementById('refreshBtn');
     refreshBtn.innerHTML = '<span class="spin" style="width:10px;height:10px;border-width:1.5px;"></span> Refreshing…';
     const res = await fetchLeads();
-    if (!res.ok) throw new Error(res.error || 'Unknown');
-    allLeads = (res.leads || []).sort((a, b) => {
+    if (!res?.ok) throw new Error(res?.error || 'Unknown');
+
+    const incoming = (res.leads || []).sort((a, b) => {
       const ta = new Date(a.submitted_at || 0).getTime();
       const tb = new Date(b.submitted_at || 0).getTime();
       return tb - ta;
     });
+
+    // On the FIRST successful fetch, anchor a baseline so we can detect
+    // submissions that arrive AFTER the admin opened the page.
+    if (!baselineSet) {
+      baselineSet = true;
+      baselineMaxTs = incoming.reduce((m, l) => {
+        const t = new Date(l.submitted_at || 0).getTime();
+        return t > m ? t : m;
+      }, 0);
+      for (const l of incoming) knownLeadIds.add(String(l._row));
+      allLeads = incoming;
+      renderStats(allLeads);
+      renderLeads();
+      lastSync.textContent = 'just now';
+      refreshBtn.textContent = 'Refresh';
+      return;
+    }
+
+    // Subsequent fetches — identify new arrivals (created after baseline
+    // OR whose lead-id we haven't seen yet) and mark them for the row-
+    // flash animation + badge counter.
+    const freshLeads = incoming.filter((l) => {
+      const t = new Date(l.submitted_at || 0).getTime();
+      const isNew = t > baselineMaxTs || !knownLeadIds.has(String(l._row));
+      if (isNew) {
+        l._isFresh = true;
+        knownLeadIds.add(String(l._row));
+      }
+      return isNew;
+    });
+    allLeads = incoming;
     renderStats(allLeads);
     renderLeads();
+
+    if (freshLeads.length) {
+      bumpNewLeadsBadge(freshLeads.length);
+      updateTabTitleBadge();
+      // Quiet desktop notification if the user has granted permission
+      try { fireDesktopNotification(freshLeads); } catch {}
+    }
+
     lastSync.textContent = 'just now';
     refreshBtn.textContent = 'Refresh';
   } catch (err) {
-    console.error(err);
+    console.error('[estimates] fetch failed:', err);
+    loadState.style.display = 'block';
     loadState.innerHTML = `
       <div class="empty">
-        <div class="big" style="color: var(--accent);">Couldn't reach the sheet.</div>
+        <div class="big" style="color: var(--accent);">Couldn't reach the server.</div>
         <div>${escapeHtml(err.message || 'Unknown error')}</div>
         <button class="btn" style="margin-top: 20px;" onclick="loadAndRender()">Try again</button>
       </div>`;
     document.getElementById('refreshBtn').textContent = 'Refresh';
   }
+}
+
+// =========================================================
+// NEW-LEADS BADGE — pulses red until clicked / scrolled to.
+// Tracks count across multiple auto-refreshes since the user last
+// acknowledged. Click clears + scrolls to the leads table.
+// =========================================================
+let pendingNewLeadsCount = 0;
+const originalTabTitle = document.title;
+
+function bumpNewLeadsBadge(addCount) {
+  pendingNewLeadsCount += addCount;
+  const badge = document.getElementById('newLeadsBadge');
+  const countEl = document.getElementById('newLeadsCount');
+  if (!badge || !countEl) return;
+  countEl.textContent = pendingNewLeadsCount;
+  badge.style.display = 'inline-flex';
+}
+
+function clearNewLeadsBadge() {
+  pendingNewLeadsCount = 0;
+  const badge = document.getElementById('newLeadsBadge');
+  if (badge) badge.style.display = 'none';
+  document.title = originalTabTitle;
+}
+
+function updateTabTitleBadge() {
+  if (pendingNewLeadsCount > 0) {
+    document.title = `(${pendingNewLeadsCount} new) ${originalTabTitle}`;
+  } else {
+    document.title = originalTabTitle;
+  }
+}
+
+// Auto-clear the badge whenever the user actively brings the tab back
+// (probably to look at the new leads). Less spammy than forcing a click.
+window.addEventListener('focus', () => {
+  if (pendingNewLeadsCount > 0) clearNewLeadsBadge();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && pendingNewLeadsCount > 0) {
+    clearNewLeadsBadge();
+  }
+});
+
+// Best-effort desktop notification (only fires if the user previously
+// granted permission via the bell icon). Quiet failure is fine — the
+// in-page badge + tab-title prefix are the primary signals.
+function fireDesktopNotification(freshLeads) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const head = freshLeads[0];
+  const body = freshLeads.length === 1
+    ? `${head.name || 'Lead'} · ${head.vehicle || 'vehicle'}${head.zip ? ' · ' + head.zip : ''}`
+    : `${freshLeads.length} new estimate requests`;
+  const n = new Notification('Just Hail · new estimate request', {
+    body,
+    icon: '/favicon.ico',
+    tag: 'jh-new-lead',
+  });
+  n.onclick = () => { window.focus(); n.close(); };
 }
 
 // Periodically update 'time ago' labels
@@ -3545,11 +3673,33 @@ setInterval(() => {
 function init() {
   loadAndRender().then(() => {
     lastSync.dataset.t = Date.now();
-    // Auto-refresh every 45 seconds
+    // Auto-refresh estimate requests every 60s. Hot leads are time-sensitive
+    // so we err on the side of fresh-feeling — the endpoint is edge-cached
+    // 30s so we're not hammering Supabase.
     setInterval(() => {
       loadAndRender().then(() => { lastSync.dataset.t = Date.now(); });
-    }, 45000);
+    }, 60_000);
   });
+
+  // Wire the new-leads badge: click scrolls to top of the leads table
+  // and clears the pulsing counter.
+  document.getElementById('newLeadsBadge')?.addEventListener('click', () => {
+    clearNewLeadsBadge();
+    document.querySelector('#leadsTable')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // Best-effort desktop-notification permission prompt the first time the
+  // admin opens the page. They can deny — the pulse badge + tab title are
+  // the primary signals. Browsers require a user gesture, so we attach to
+  // the first click anywhere on the app.
+  if ('Notification' in window && Notification.permission === 'default') {
+    const ask = () => {
+      Notification.requestPermission().catch(() => {});
+      document.removeEventListener('click', ask);
+    };
+    document.addEventListener('click', ask, { once: true });
+  }
+
   initHailForecast();
   initIhmSessionManager();
   initGaStats();

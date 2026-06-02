@@ -61,10 +61,18 @@ function Nav({ accent, scrolled }) {
 }
 
 function SmartForm({ accent }) {
-  // === GOOGLE SHEETS WIRING ======================================
-  // Paste your Apps Script Web App URL here once deployed.
-  // Leave as empty string to keep the form in "mock" mode (no network call).
-  const SHEET_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzi_4_ZaBRafJ5bZpxavtNF7fzS84bJHHicANZQZiybTZpwaStqK72Qc1KGTAKzmkf4vQ/exec';
+  // === SUBMISSION TARGET ==========================================
+  // Every form submission POSTs to /api/form-submit, which writes the
+  // lead to Supabase (source-of-truth) + dispatches the SMS retarget,
+  // Charlie's hot-lead alert SMS, the Resend confirmation email, and
+  // the PostHog event. The admin page reads back from the same table
+  // via /api/admin/estimates and shows it within ~60 seconds.
+  //
+  // The old Google Apps Script Sheet write was removed on 2026-05-12:
+  // its /macros/.../exec URL silently rotated when the script was
+  // redeployed and submissions were dropping on the floor. Supabase
+  // is now the only intake path. See docs/MAP_INFRASTRUCTURE_HANDOFF.md
+  // for context.
   // ================================================================
 
   const [data, setData] = React.useState({
@@ -128,49 +136,32 @@ function SmartForm({ accent }) {
     setSubmitting(true);
     setSubmitError('');
 
-    // Fire BOTH endpoints in parallel:
-    //   1. /api/form-submit — our backend (leads upsert, drip match, SMS retarget,
-    //      Charlie alert, Resend confirmation, PostHog mirror)
-    //   2. SHEET_ENDPOINT — Google Apps Script Sheet (Charlie's manual review backup)
-    const fetches = [];
-
-    // Add the source URL (with UTM params) so the backend can match the form-fill
-    // back to the originating drip campaign/lead.
+    // Single POST to our backend. /api/form-submit handles:
+    //   leads upsert (source-of-truth in Supabase)
+    //   immediate SMS retarget to the visitor (if smsConsent + DNC clear)
+    //   hot-lead alert SMS to Charlie's cell
+    //   Resend confirmation email back to the visitor
+    //   PostHog form_submitted event
+    // The admin's "Estimate requests" section picks it up from the same
+    // leads table within ~60s and pulses the NEW badge for Charlie.
     const fullPayload = { ...payload, source_url: location.href };
 
-    fetches.push(
-      fetch('/api/form-submit', {
+    let backend = { ok: false };
+    try {
+      const r = await fetch('/api/form-submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fullPayload),
-      }).then(r => r.json()).then(j => ({ ok: j.ok !== false, kind: 'backend', data: j }))
-        .catch(err => ({ ok: false, kind: 'backend', error: err.message }))
-    );
-
-    if (SHEET_ENDPOINT) {
-      fetches.push(
-        fetch(SHEET_ENDPOINT, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload),
-        }).then(() => ({ ok: true, kind: 'sheet' }))
-          .catch(err => ({ ok: false, kind: 'sheet', error: err.message }))
-      );
+      });
+      const j = await r.json().catch(() => ({}));
+      backend = { ok: r.ok && j.ok !== false, data: j };
+    } catch (err) {
+      backend = { ok: false, error: err.message };
     }
 
-    const results = await Promise.allSettled(fetches);
-    const backend = results.find(r => r.value?.kind === 'backend')?.value;
-
-    // If backend failed but Sheet succeeded, still let the user through (the
-    // form data isn't lost; Charlie sees it in the Sheet) — but log the issue.
-    if (!backend?.ok) {
-      console.warn('[form] backend submit failed:', backend?.error || backend?.data);
-      // Only show error if EVERYTHING failed
-      const sheetOk = results.find(r => r.value?.kind === 'sheet')?.value?.ok;
-      if (!sheetOk) {
-        setSubmitError('Could not reach the server. Please call us at (512) 221-3013.');
-      }
+    if (!backend.ok) {
+      console.warn('[form] backend submit failed:', backend.error || backend.data);
+      setSubmitError('Could not reach the server. Please call us at (512) 221-3013.');
     }
 
     // PostHog: identify the lead by reference number, attach all form data
