@@ -179,6 +179,24 @@ function App() {
                 }} />
                 (512) 221-3013
               </a>
+              {/* Text Us — routes to the Sendblue line. Same glass look as the
+                  call button; blue chat-bubble icon signals iMessage/SMS. */}
+              <a href="sms:+15124971424?body=Hi!%20I%20would%20love%20to%20learn%20more%20about%20your%20service" style={{
+                padding: '20px 34px', background: 'rgba(255,255,255,0.10)', color: '#ffffff',
+                border: '1px solid rgba(245,243,238,0.4)',
+                backdropFilter: 'blur(8px)',
+                textDecoration: 'none', fontFamily: 'var(--font-ui)',
+                fontSize: 24, fontWeight: 600, letterSpacing: '0.01em',
+                borderRadius: 2, display: 'inline-flex', alignItems: 'center', gap: 14,
+                textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+              }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0A93F6"
+                  strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ filter: 'drop-shadow(0 0 6px rgba(10,147,246,0.6))' }}>
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                Text us
+              </a>
             </div>
           </div>
 
